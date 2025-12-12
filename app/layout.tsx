@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Inter } from "next/font/google"; 
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
+import { UpdatePrompt } from "@/components/update-prompt";
 
-// Substituindo Geist por Inter para compatibilidade com Next.js 14
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
@@ -13,12 +13,12 @@ export const metadata: Metadata = {
     generator: 'v0.app'
 };
 
-// Configuração correta de viewport para PWA
 export const viewport = {
   themeColor: "#2a9d8f",
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
+  userScalable: false,
 };
 
 export default function RootLayout({
@@ -28,6 +28,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="pt-BR" suppressHydrationWarning>
+      <head>
+        <link rel="icon" href="/favicon.ico" sizes="any" />
+      </head>
       <body className={inter.className}>
         <ThemeProvider
           attribute="class"
@@ -36,6 +39,7 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           {children}
+          <UpdatePrompt />
         </ThemeProvider>
       </body>
     </html>
