@@ -1,0 +1,24 @@
+{
+  "name": "SEMA/AP — AIA Eletrônico",
+  "short_name": "AIA SEMA",
+  "description": "Calculadora de Multas Ambientais - Sistema de Auto de Infração Ambiental",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f5f5f5",
+  "theme_color": "#2a9d8f",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/icon-192.jpg",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.jpg",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
