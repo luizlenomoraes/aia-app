@@ -1461,11 +1461,16 @@ export const infracoesData: InfracaoBloco[] = rawData.map((bloco) => ({
     // Gerar ID estável baseado na categoria e índice se não houver um
     const idGerado = `${bloco.tipo_infracao.substring(0, 3)}-${inf.fundamento_legal.replace(/[^a-zA-Z0-9]/g, '')}-${idx}`.toLowerCase();
     
+    // MELHORIA ESTÉTICA: Cria um label padronizado "Artigo - Resumo"
+    // Remove vírgulas ou espaços extras no final do resumo antes de combinar para ficar limpo
+    const resumoLimpo = inf.resumo.trim().replace(/,$/, '');
+    const labelFormatado = `${inf.fundamento_legal} – ${resumoLimpo}`;
+
     return {
       ...inf,
       id: inf.id || idGerado,
-      // Garante que campos obrigatórios na nova interface existam
-      label: inf.resumo, 
+      // Garante que campos obrigatórios na nova interface existam e usem o formato padronizado
+      label: labelFormatado, // Agora aparecerá: "Art. 40, I – Matar, perseguir..."
       artigo: inf.fundamento_legal,
       descricao: inf.descricao_completa,
       gravidade: "Variavel", // Default seguro
