@@ -4,48 +4,60 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    /* Cores extraídas do seu HTML original */
+    --background: 150 15% 97%;   /* Fundo levemente esverdeado (#f5f7f4) */
+    --foreground: 200 50% 20%;   /* Texto escuro (#1f2a1e) */
+
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card-foreground: 200 50% 20%;
+
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 173 58% 39%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
+    --popover-foreground: 200 50% 20%;
+
+    /* Verde SEMA Principal */
+    --primary: 139 18% 27%;      /* #395238 (Verde Musgo Escuro) */
+    --primary-foreground: 0 0% 100%;
+
+    /* Verde Secundário / Acentos */
+    --secondary: 124 17% 40%;    /* #537856 */
+    --secondary-foreground: 0 0% 100%;
+
+    --muted: 114 20% 92%;        /* #e6efe5 */
+    --muted-foreground: 130 10% 40%;
+
+    --accent: 139 18% 27%;
+    --accent-foreground: 0 0% 100%;
+
     --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 173 58% 39%;
-    --radius: 0.5rem;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 115 15% 85%;       /* #dbe3d8 */
+    --input: 115 15% 85%;
+    --ring: 139 18% 27%;
+
+    --radius: 0.75rem;
   }
 
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 173 58% 39%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
+    --background: 200 50% 10%;
+    --foreground: 0 0% 98%;
+    --card: 200 50% 12%;
+    --card-foreground: 0 0% 98%;
+    --popover: 200 50% 12%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 139 18% 40%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 124 17% 30%;
+    --secondary-foreground: 0 0% 100%;
+    --muted: 200 30% 20%;
+    --muted-foreground: 200 20% 70%;
+    --accent: 200 30% 25%;
+    --accent-foreground: 0 0% 98%;
     --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 173 58% 39%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 200 30% 20%;
+    --input: 200 30% 20%;
+    --ring: 139 18% 40%;
   }
 }
 
@@ -56,4 +68,14 @@
   body {
     @apply bg-background text-foreground;
   }
+}
+
+/* Badges Personalizadas */
+.badge-aberta {
+  background-color: #1f5a33; /* Verde escuro SEMA */
+  color: white;
+}
+.badge-fechada {
+  background-color: #4a3622; /* Marrom/Laranja fechado */
+  color: white;
 }
