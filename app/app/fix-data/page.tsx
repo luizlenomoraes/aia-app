@@ -21,38 +21,59 @@ export default function FixDataPage() {
     try {
       const text = await file.text()
       
-      // 1. Encontrar o Base64 (mesma lógica do script Python/Node)
+      // 1. Encontrar o Base64
       const regex = /atob\('([^']+)'\)/
       const match = text.match(regex)
 
       if (!match || !match[1]) {
-        throw new Error("Não foi possível encontrar o código Base64 (padrão atob) no arquivo HTML.")
+        throw new Error("Não foi possível encontrar o código Base64 no arquivo HTML.")
       }
 
       setMessage("Decodificando dados...")
       
       // 2. Decodificar
-      // O navegador usa atob nativo. Se tiver caracteres especiais, precisamos corrigir o encoding
       const binaryString = atob(match[1])
       const bytes = Uint8Array.from(binaryString, c => c.charCodeAt(0))
-      const decoder = new TextDecoder('latin1') // Tenta latin1 primeiro (padrão comum de base64 antigo)
+      const decoder = new TextDecoder('latin1')
       let jsonString = decoder.decode(bytes)
       
-      // Tenta corrigir UTF-8 escapado se necessário
       try {
         jsonString = decodeURIComponent(escape(window.atob(match[1])))
       } catch (e) {
-        // Se falhar, mantemos a versão latin1/binary que costuma funcionar para dados brutos
+        // Fallback
       }
 
       const data = JSON.parse(jsonString)
 
       if (!Array.isArray(data)) throw new Error("O JSON extraído não é um array válido.")
 
-      // 3. Gerar Estatísticas
+      // 3. Processar Incisos e Limpar
       let totalItems = 0
       data.forEach((cat: any) => {
-        if (Array.isArray(cat.infracoes)) totalItems += cat.infracoes.length
+        if (Array.isArray(cat.infracoes)) {
+            totalItems += cat.infracoes.length;
+            cat.infracoes.forEach((inf: any) => {
+                // Lógica de extração de incisos
+                const incisoRegex = /^([IVX]+)\s*-\s*/i;
+                let inciso = null;
+                const matchResumo = (inf.resumo || '').match(incisoRegex);
+                if (matchResumo) inciso = matchResumo[1];
+                
+                if (!inciso) {
+                    const matchDesc = (inf.descricao_completa || '').match(incisoRegex);
+                    if (matchDesc) inciso = matchDesc[1];
+                }
+
+                if (inciso && inf.fundamento_legal && !inf.fundamento_legal.includes(inciso)) {
+                    const base = inf.fundamento_legal.trim();
+                    if (!base.endsWith(',')) {
+                        inf.fundamento_legal = `${base}, ${inciso}`;
+                    } else {
+                        inf.fundamento_legal = `${base} ${inciso}`;
+                    }
+                }
+            });
+        }
       })
 
       setStats({ categories: data.length, items: totalItems })
@@ -87,26 +108,20 @@ function detectTipoMulta(item: Infracao): "aberta" | "fechada" {
       " ",
     )
 
-    // 1) Padrão textual "R$ X a R$ Y" => intervalo => aberta
     const hasRangeText = /R\\$\\s*\\d{1,3}(\\.\\d{3})*,\\d{2}\\s*(?:a|até)\\s*R\\$\\s*\\d{1,3}(\\.\\d{3})*,\\d{2}/i.test(txt)
-
-    // 2) Intervalos por campos: valor_minimo/valor_maximo diferentes e presentes => aberta
+    
     const vmin = (item.valor_minimo || "").toString().trim()
     const vmax = (item.valor_maximo || "").toString().trim()
     const hasIntervalFields = vmin && vmax && vmin !== vmax
 
-    // 3) Multa fechada geralmente tem valor_por_unidade e/ou unidade_de_medida definidos
     const hasUnitFields = !!item.valor_por_unidade || !!item.unidade_de_medida
 
-    // 4) Campo natureza_multa se existir, usamos apenas como fallback
     const natureField = (item.natureza_multa || "").toString().toLowerCase()
 
-    // Regras de decisão
     if (hasRangeText || hasIntervalFields) return "aberta"
     if (hasUnitFields) return "fechada"
     if (natureField === "aberta" || natureField === "fechada") return natureField as "aberta" | "fechada"
 
-    // Heurística adicional
     const unitHints =
       /(por\\s+(quilo|kg|hectare|árvore|árvores|unidade|indivíduo|exemplar|m³|metro\\s*cúbico|m2|m²|m3|litro|litros|peça|peças|fração))/i
     if (unitHints.test(txt)) return "fechada"
@@ -131,7 +146,6 @@ export const infracoesData: InfracaoBloco[] = rawData.map((bloco) => ({
 }))
 `
 
-      // 5. Criar Blob para download
       const blob = new Blob([tsContent], { type: "text/typescript" })
       const url = URL.createObjectURL(blob)
       setDownloadUrl(url)
@@ -152,17 +166,17 @@ export const infracoesData: InfracaoBloco[] = rawData.map((bloco) => ({
         <CardHeader className="bg-primary text-primary-foreground rounded-t-xl">
           <CardTitle className="flex items-center gap-2">
             <FileCode className="w-6 h-6" />
-            Ferramenta de Correção de Dados (v0)
+            Ferramenta de Correção de Dados (v2)
           </CardTitle>
         </CardHeader>
         <CardContent className="p-6 space-y-6">
           <div className="bg-blue-50 border border-blue-200 p-4 rounded-lg text-sm text-blue-800">
             <p className="font-semibold mb-1">Como usar:</p>
             <ol className="list-decimal pl-5 space-y-1">
-              <li>Faça upload do arquivo <strong>AIA_APP_UNIFICADO_v3.html</strong> abaixo.</li>
-              <li>O sistema irá extrair todas as infrações automaticamente.</li>
+              <li>Faça upload do arquivo <strong>AIA_APP_UNIFICADO_v3.html</strong>.</li>
+              <li>O sistema extrairá as 102 infrações e corrigirá os incisos.</li>
               <li>Baixe o arquivo gerado (<strong>infracoes-data.ts</strong>).</li>
-              <li>Substitua o arquivo original na pasta <code>lib/</code> do seu projeto.</li>
+              <li>Substitua o arquivo original na pasta <code>lib/</code>.</li>
             </ol>
           </div>
 
@@ -174,19 +188,7 @@ export const infracoesData: InfracaoBloco[] = rawData.map((bloco) => ({
               </label>
               <input id="file-upload" type="file" accept=".html,.htm" className="hidden" onChange={handleFileUpload} />
             </div>
-            <p className="text-xs text-gray-500">Selecione o arquivo com o base64 completo</p>
           </div>
-
-          {status === "processing" && (
-            <div className="text-center py-4 text-gray-600">Processando...</div>
-          )}
-
-          {status === "error" && (
-            <div className="flex items-center gap-2 bg-red-100 text-red-700 p-4 rounded-lg">
-              <AlertCircle className="w-5 h-5" />
-              {message}
-            </div>
-          )}
 
           {status === "success" && (
             <div className="space-y-4">
