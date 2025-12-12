@@ -15,7 +15,11 @@ export const metadata: Metadata = {
     statusBarStyle: "default",
     title: "AIA SEMA/AP",
   },
-    generator: 'v0.app'
+  icons: {
+    icon: "/logo-sema-ap.png",
+    apple: "/logo-sema-ap.png",
+  },
+  generator: "v0.app",
 }
 
 export const viewport: Viewport = {
@@ -34,7 +38,7 @@ export default function RootLayout({
   return (
     <html lang="pt-BR">
       <head>
-        <link rel="apple-touch-icon" href="/icon-192.jpg" />
+        <link rel="apple-touch-icon" href="/logo-sema-ap.png" />
       </head>
       <body className="font-sans antialiased touch-manipulation">{children}</body>
     </html>

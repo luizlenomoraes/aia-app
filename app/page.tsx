@@ -5,6 +5,7 @@ import { BottomNav } from "@/components/bottom-nav"
 import { CalculadoraTab } from "@/components/calculadora-tab"
 import { InfracoesTab } from "@/components/infracoes-tab"
 import type { Infracao } from "@/lib/infracoes-data"
+import Image from "next/image"
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<"infracoes" | "calculadora">("infracoes")
@@ -21,19 +22,10 @@ export default function Home() {
       <header className="sticky top-0 z-50 bg-primary text-primary-foreground shadow-md">
         <div className="px-4 py-4 text-center">
           <div className="flex items-center justify-center gap-3 mb-1">
-            <div className="w-10 h-10 rounded-full bg-primary-foreground/20 flex items-center justify-center">
-              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3"
-                />
-              </svg>
-            </div>
+            <Image src="/logo-sema-ap.png" alt="SEMA-AP" width={40} height={40} className="rounded-lg" />
             <h1 className="text-lg font-bold tracking-tight">SEMA/AP — AIA Eletrônico</h1>
           </div>
-          <p className="text-xs opacity-90">Calculadora de Multas Ambientais v2.4</p>
+          <p className="text-xs opacity-90">Calculadora de Multas Ambientais</p>
         </div>
       </header>
 
@@ -45,7 +37,7 @@ export default function Home() {
         )}
       </div>
 
-      {/* Bottom Navigation - Swap tab order */}
+      {/* Bottom Navigation */}
       <BottomNav activeTab={activeTab} onTabChange={setActiveTab} />
     </main>
   )
