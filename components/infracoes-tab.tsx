@@ -28,6 +28,14 @@ function getArtigoNumber(fundamento: string | undefined): number {
   return match ? Number.parseInt(match[1], 10) : 9999
 }
 
+// Função para remover acentos e caracteres especiais para busca
+function normalizeText(text: string): string {
+  return text
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+}
+
 export function InfracoesTab({ onSelectInfracao }: InfracoesTabProps) {
   const [searchQuery, setSearchQuery] = useState("")
   const [categoriaFilter, setCategoriaFilter] = useState("")
@@ -54,12 +62,13 @@ export function InfracoesTab({ onSelectInfracao }: InfracoesTabProps) {
 
     allInfracoes.sort((a, b) => getArtigoNumber(a.fundamento_legal) - getArtigoNumber(b.fundamento_legal))
 
+    // Prepara o termo de busca normalizado
+    const normalizedQuery = normalizeText(searchQuery)
+
     return allInfracoes.filter((inf) => {
-      const matchesSearch =
-        !searchQuery ||
-        `${inf.resumo || ""} ${inf.descricao_completa || ""} ${inf.fundamento_legal || ""}`
-          .toLowerCase()
-          .includes(searchQuery.toLowerCase())
+      // Busca insensível a acentos
+      const searchableText = `${inf.resumo || ""} ${inf.descricao_completa || ""} ${inf.fundamento_legal || ""}`
+      const matchesSearch = !searchQuery || normalizeText(searchableText).includes(normalizedQuery)
 
       const matchesCategoria = !categoriaFilter || inf._categoria === categoriaFilter
 
@@ -91,7 +100,7 @@ export function InfracoesTab({ onSelectInfracao }: InfracoesTabProps) {
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
         <Input
           type="search"
-          placeholder="Buscar infrações..."
+          placeholder="Buscar (ex: fauna, pesca, art 40)..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           className="pl-10 pr-10"
@@ -123,8 +132,8 @@ export function InfracoesTab({ onSelectInfracao }: InfracoesTabProps) {
             Limpar filtros
           </Button>
         )}
-        <span className="text-sm text-muted-foreground ml-auto">
-          {filteredInfracoes.length} resultado{filteredInfracoes.length !== 1 ? "s" : ""}
+        <span className="text-xs text-muted-foreground ml-auto">
+          {filteredInfracoes.length} infrações
         </span>
       </div>
 
@@ -168,12 +177,12 @@ export function InfracoesTab({ onSelectInfracao }: InfracoesTabProps) {
 
       {/* Results */}
       <ScrollArea className="h-[calc(100vh-300px)]">
-        <div className="space-y-2 pr-2">
+        <div className="space-y-2 pr-2 pb-20">
           {filteredInfracoes.length === 0 ? (
             <Card>
               <CardContent className="p-6 text-center">
                 <AlertCircle className="w-10 h-10 mx-auto text-muted-foreground mb-2" />
-                <p className="text-muted-foreground">Nenhuma infração encontrada com os filtros atuais.</p>
+                <p className="text-muted-foreground">Nenhuma infração encontrada.</p>
               </CardContent>
             </Card>
           ) : (
@@ -186,7 +195,7 @@ export function InfracoesTab({ onSelectInfracao }: InfracoesTabProps) {
                 <CardContent className="p-4">
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
+                      <div className="flex flex-wrap items-center gap-2 mb-2">
                         {extractArtigo(inf.fundamento_legal) && (
                           <Badge variant="outline" className="text-xs font-semibold shrink-0">
                             {extractArtigo(inf.fundamento_legal)}
@@ -199,15 +208,11 @@ export function InfracoesTab({ onSelectInfracao }: InfracoesTabProps) {
                           {inf._tipo_multa_computado === "aberta" ? "Aberta" : "Fechada"}
                         </Badge>
                       </div>
-                      <h3 className="font-medium text-sm line-clamp-2 mb-1">{inf.resumo}</h3>
+                      {/* Adicionado break-words para evitar estouro horizontal */}
+                      <h3 className="font-medium text-sm leading-snug break-words mb-1">{inf.resumo}</h3>
                       <p className="text-xs text-muted-foreground line-clamp-1">{inf._categoria}</p>
-                      {inf.valor_minimo != null && inf.valor_maximo != null && (
-                        <p className="text-xs text-muted-foreground mt-1">
-                          {formatCurrency(inf.valor_minimo)} - {formatCurrency(inf.valor_maximo)}
-                        </p>
-                      )}
                     </div>
-                    <ChevronRight className="w-5 h-5 text-muted-foreground flex-shrink-0" />
+                    <ChevronRight className="w-5 h-5 text-muted-foreground flex-shrink-0 mt-2" />
                   </div>
                 </CardContent>
               </Card>
@@ -218,23 +223,27 @@ export function InfracoesTab({ onSelectInfracao }: InfracoesTabProps) {
 
       {/* Detail Sheet */}
       <Sheet open={!!selectedInfracao} onOpenChange={() => setSelectedInfracao(null)}>
-        <SheetContent side="bottom" className="h-[85vh] rounded-t-2xl">
-          <SheetHeader>
+        <SheetContent side="bottom" className="h-[90vh] rounded-t-xl p-0 flex flex-col">
+          <SheetHeader className="p-4 border-b">
             <SheetTitle className="text-left pr-8">Detalhes da Infração</SheetTitle>
           </SheetHeader>
+          
           {selectedInfracao && (
-            <ScrollArea className="h-[calc(85vh-140px)] mt-4">
-              <div className="space-y-4 pb-6">
+            <div className="flex-1 overflow-y-auto p-4 pb-24">
+              <div className="space-y-5">
                 <div>
-                  <div className="flex items-center gap-2 mb-2">
+                  <div className="flex flex-wrap items-center gap-2 mb-3">
                     {extractArtigo(selectedInfracao.fundamento_legal) && (
                       <Badge variant="outline" className="text-sm font-semibold">
                         {extractArtigo(selectedInfracao.fundamento_legal)}
                       </Badge>
                     )}
-                    <Badge className="text-xs">{selectedInfracao._categoria}</Badge>
+                    <Badge className="text-xs break-all">{selectedInfracao._categoria}</Badge>
                   </div>
-                  <h2 className="text-lg font-semibold">{selectedInfracao.resumo}</h2>
+                  {/* Título com quebra de linha forçada */}
+                  <h2 className="text-lg font-bold leading-snug break-words whitespace-normal">
+                    {selectedInfracao.resumo}
+                  </h2>
                 </div>
 
                 <Card>
@@ -245,7 +254,10 @@ export function InfracoesTab({ onSelectInfracao }: InfracoesTabProps) {
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <p className="text-sm text-muted-foreground">{selectedInfracao.descricao_completa}</p>
+                    {/* Descrição com quebra de linha e espaçamento */}
+                    <p className="text-sm text-muted-foreground break-words whitespace-pre-wrap leading-relaxed">
+                      {selectedInfracao.descricao_completa}
+                    </p>
                   </CardContent>
                 </Card>
 
@@ -257,7 +269,9 @@ export function InfracoesTab({ onSelectInfracao }: InfracoesTabProps) {
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <p className="text-sm text-muted-foreground">{selectedInfracao.fundamento_legal}</p>
+                    <p className="text-sm text-muted-foreground break-words">
+                      {selectedInfracao.fundamento_legal}
+                    </p>
                   </CardContent>
                 </Card>
 
@@ -292,9 +306,9 @@ export function InfracoesTab({ onSelectInfracao }: InfracoesTabProps) {
                     )}
 
                     {selectedInfracao.unidade_de_medida && (
-                      <div className="flex justify-between items-center">
-                        <span className="text-sm text-muted-foreground">Unidade de Medida</span>
-                        <span className="font-medium">{selectedInfracao.unidade_de_medida}</span>
+                      <div className="flex justify-between items-center gap-2">
+                        <span className="text-sm text-muted-foreground shrink-0">Unidade</span>
+                        <span className="font-medium text-right text-sm">{selectedInfracao.unidade_de_medida}</span>
                       </div>
                     )}
                   </CardContent>
@@ -306,29 +320,18 @@ export function InfracoesTab({ onSelectInfracao }: InfracoesTabProps) {
                       <CardTitle className="text-sm">Critérios de Aplicação</CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <p className="text-sm text-muted-foreground">{selectedInfracao.criterios_aplicacao}</p>
-                    </CardContent>
-                  </Card>
-                )}
-
-                {selectedInfracao.observacoes && (
-                  <Card>
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-sm">Observações</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <p className="text-sm text-muted-foreground">{selectedInfracao.observacoes}</p>
+                      <p className="text-sm text-muted-foreground break-words">{selectedInfracao.criterios_aplicacao}</p>
                     </CardContent>
                   </Card>
                 )}
               </div>
-            </ScrollArea>
+            </div>
           )}
 
           {selectedInfracao && (
-            <div className="absolute bottom-0 left-0 right-0 p-4 bg-background border-t">
-              <Button onClick={handleSelectThisInfracao} className="w-full gap-2">
-                <CheckCircle className="w-4 h-4" />
+            <div className="p-4 bg-background border-t mt-auto">
+              <Button onClick={handleSelectThisInfracao} className="w-full gap-2 h-12 text-base shadow-lg">
+                <CheckCircle className="w-5 h-5" />
                 Selecionar esta Infração
               </Button>
             </div>
