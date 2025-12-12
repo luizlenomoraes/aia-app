@@ -9,29 +9,59 @@ export function UpdatePrompt() {
   const [waitingWorker, setWaitingWorker] = useState<ServiceWorker | null>(null)
 
   useEffect(() => {
+    // Verifica se está no navegador e se tem suporte a SW
     if (typeof window !== "undefined" && "serviceWorker" in navigator) {
-      // Quando o SW encontra uma atualização
-      window.addEventListener("sw-update-found", (event: any) => {
-        const newWorker = event.detail
-        setWaitingWorker(newWorker)
-        setShowReload(true)
-      })
       
-      // Verifica se já tem um worker esperando ao carregar
-      navigator.serviceWorker.getRegistration().then((reg) => {
-        if (reg && reg.waiting) {
-          setWaitingWorker(reg.waiting)
+      // 1. Registrar o Service Worker AQUI (movido do layout.tsx)
+      navigator.serviceWorker.register("/sw.js").then((registration) => {
+        console.log("SW registrado com escopo:", registration.scope)
+
+        // Se já houver um worker esperando (atualização baixada em background)
+        if (registration.waiting) {
+          setWaitingWorker(registration.waiting)
           setShowReload(true)
         }
+
+        // Monitorar novas atualizações encontradas durante o uso
+        registration.addEventListener("updatefound", () => {
+          const newWorker = registration.installing
+          if (newWorker) {
+            newWorker.addEventListener("statechange", () => {
+              // Se o novo worker foi instalado mas ainda não é o controlador (tem um antigo ativo)
+              if (newWorker.state === "installed" && navigator.serviceWorker.controller) {
+                setWaitingWorker(newWorker)
+                setShowReload(true)
+              }
+            })
+          }
+        })
+      }).catch(err => console.error("Erro ao registrar SW:", err))
+
+      // 2. Verificar atualizações periodicamente (a cada hora)
+      const interval = setInterval(() => {
+        navigator.serviceWorker.getRegistration().then(reg => reg?.update())
+      }, 60 * 60 * 1000)
+
+      // 3. Recarregar a página automaticamente quando o novo SW assumir o controle
+      let refreshing = false;
+      navigator.serviceWorker.addEventListener("controllerchange", () => {
+        if (!refreshing) {
+          window.location.reload()
+          refreshing = true
+        }
       })
+
+      return () => clearInterval(interval)
     }
   }, [])
 
   const reloadPage = () => {
     if (waitingWorker) {
+      // Manda o worker esperando assumir o controle imediatamente
       waitingWorker.postMessage({ type: "SKIP_WAITING" })
+    } else {
+      window.location.reload()
     }
-    window.location.reload()
   }
 
   if (!showReload) return null
