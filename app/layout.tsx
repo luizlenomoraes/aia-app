@@ -1,47 +1,46 @@
-import type { Metadata } from "next";
-import { Inter } from "next/font/google"; 
-import "./globals.css";
-import { ThemeProvider } from "@/components/theme-provider";
-import { UpdatePrompt } from "@/components/update-prompt";
+import type React from "react"
+import type { Metadata, Viewport } from "next"
+import { Geist, Geist_Mono } from "next/font/google"
+import "./globals.css"
 
-const inter = Inter({ subsets: ["latin"] });
+const _geist = Geist({ subsets: ["latin"] })
+const _geistMono = Geist_Mono({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "AIA Ambiental",
-  description: "Aplicativo de Auto de Infração Ambiental - SEMA/AP",
+  title: "SEMA/AP — AIA Eletrônico",
+  description: "Calculadora de Multas Ambientais - Sistema de Auto de Infração Ambiental do Amapá",
   manifest: "/manifest.json",
-    generator: 'v0.app'
-};
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "AIA SEMA/AP",
+  },
+  icons: {
+    icon: "/logo-sema-ap.png",
+    apple: "/logo-sema-ap.png",
+  },
+  generator: "v0.app",
+}
 
-export const viewport = {
-  themeColor: "#2a9d8f",
+export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
-};
+  themeColor: "#2a9d8f",
+}
 
 export default function RootLayout({
   children,
 }: Readonly<{
-  children: React.ReactNode;
+  children: React.ReactNode
 }>) {
   return (
-    <html lang="pt-BR" suppressHydrationWarning>
+    <html lang="pt-BR">
       <head>
-        <link rel="icon" href="/favicon.ico" sizes="any" />
+        <link rel="apple-touch-icon" href="/logo-sema-ap.png" />
       </head>
-      <body className={inter.className}>
-        <ThemeProvider
-          attribute="class"
-          defaultTheme="system"
-          enableSystem
-          disableTransitionOnChange
-        >
-          {children}
-          <UpdatePrompt />
-        </ThemeProvider>
-      </body>
+      <body className="font-sans antialiased touch-manipulation">{children}</body>
     </html>
-  );
+  )
 }

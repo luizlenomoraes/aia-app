@@ -1,13 +1,14 @@
 "use client"
 
 import { useState, useMemo } from "react"
-import { Card, CardContent } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Badge } from "@/components/ui/badge"
-import { Search, X, ChevronRight, Scale, AlertCircle, CheckCircle, FileText } from "lucide-react"
+import { Search, Filter, ChevronRight, X, FileText, Scale, AlertCircle, CheckCircle } from "lucide-react"
 import { infracoesData, type Infracao } from "@/lib/infracoes-data"
 import { formatCurrency } from "@/lib/utils"
 
@@ -15,215 +16,323 @@ interface InfracoesTabProps {
   onSelectInfracao: (infracao: Infracao) => void
 }
 
-// CORREÇÃO: Função que preserva os incisos (I, II, etc) e remove apenas o Decreto
-function formatFundamento(texto: string | undefined): string {
-  if (!texto) return "Artigo";
-  // Pega tudo antes da primeira vírgula seguida de "Decreto" ou apenas o texto se não tiver decreto
-  return texto.split(/,\s*Decreto/i)[0].trim();
+function extractArtigo(fundamento: string | undefined): string {
+  if (!fundamento) return ""
+  const match = fundamento.match(/Art\.?\s*(\d+)/i)
+  return match ? `Art. ${match[1]}` : ""
+}
+
+function getArtigoNumber(fundamento: string | undefined): number {
+  if (!fundamento) return 9999
+  const match = fundamento.match(/Art\.?\s*(\d+)/i)
+  return match ? Number.parseInt(match[1], 10) : 9999
 }
 
 export function InfracoesTab({ onSelectInfracao }: InfracoesTabProps) {
   const [searchQuery, setSearchQuery] = useState("")
+  const [categoriaFilter, setCategoriaFilter] = useState("")
+  const [tipoMultaFilter, setTipoMultaFilter] = useState("")
   const [selectedInfracao, setSelectedInfracao] = useState<Infracao | null>(null)
-  
-  // Achata a lista para busca global
-  const allInfracoes = useMemo(() => {
-    return infracoesData.flatMap(bloco => bloco.infracoes);
-  }, []);
+  const [showFilters, setShowFilters] = useState(false)
+
+  const categorias = useMemo(() => {
+    const cats = new Set<string>()
+    infracoesData.forEach((bloco) => cats.add(bloco.tipo_infracao))
+    return Array.from(cats).sort()
+  }, [])
 
   const filteredInfracoes = useMemo(() => {
-    if (!searchQuery) return allInfracoes;
-    
-    const lowerQuery = searchQuery.toLowerCase();
-    return allInfracoes.filter(inf => 
-      (inf.resumo || "").toLowerCase().includes(lowerQuery) ||
-      (inf.descricao_completa || "").toLowerCase().includes(lowerQuery) ||
-      (inf.fundamento_legal || "").toLowerCase().includes(lowerQuery) ||
-      (inf.artigo || "").toLowerCase().includes(lowerQuery)
-    );
-  }, [allInfracoes, searchQuery]);
+    const allInfracoes: Infracao[] = []
+    infracoesData.forEach((bloco) => {
+      bloco.infracoes.forEach((inf) => {
+        allInfracoes.push({
+          ...inf,
+          _categoria: bloco.tipo_infracao,
+        })
+      })
+    })
+
+    allInfracoes.sort((a, b) => getArtigoNumber(a.fundamento_legal) - getArtigoNumber(b.fundamento_legal))
+
+    return allInfracoes.filter((inf) => {
+      const matchesSearch =
+        !searchQuery ||
+        `${inf.resumo || ""} ${inf.descricao_completa || ""} ${inf.fundamento_legal || ""}`
+          .toLowerCase()
+          .includes(searchQuery.toLowerCase())
+
+      const matchesCategoria = !categoriaFilter || inf._categoria === categoriaFilter
+
+      const matchesTipoMulta = !tipoMultaFilter || inf._tipo_multa_computado === tipoMultaFilter
+
+      return matchesSearch && matchesCategoria && matchesTipoMulta
+    })
+  }, [searchQuery, categoriaFilter, tipoMultaFilter])
+
+  const clearFilters = () => {
+    setSearchQuery("")
+    setCategoriaFilter("")
+    setTipoMultaFilter("")
+  }
+
+  const hasActiveFilters = searchQuery || categoriaFilter || tipoMultaFilter
+
+  const handleSelectThisInfracao = () => {
+    if (selectedInfracao) {
+      onSelectInfracao(selectedInfracao)
+      setSelectedInfracao(null)
+    }
+  }
 
   return (
-    <div className="space-y-4 h-full flex flex-col">
-      {/* Barra de Busca */}
-      <div className="relative z-10">
-        <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
-          <Search className="h-4 w-4 text-primary" />
-        </div>
+    <div className="space-y-4">
+      {/* Search */}
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
         <Input
           type="search"
-          placeholder="Buscar infração (ex: fauna, pesca, art 40)..."
+          placeholder="Buscar infrações..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          className="pl-10 h-12 rounded-xl border-primary/30 focus-visible:ring-primary bg-white shadow-sm"
+          className="pl-10 pr-10"
         />
         {searchQuery && (
-          <button 
+          <button
             onClick={() => setSearchQuery("")}
-            className="absolute inset-y-0 right-3 flex items-center text-muted-foreground hover:text-primary p-2"
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
           >
-            <X className="h-4 w-4" />
+            <X className="w-4 h-4" />
           </button>
         )}
       </div>
 
-      <div className="flex items-center justify-between px-1">
-        <span className="text-xs font-bold text-primary uppercase tracking-wide">
-          {filteredInfracoes.length} Infrações encontradas
+      {/* Filter Toggle */}
+      <div className="flex items-center gap-2">
+        <Button
+          variant={showFilters ? "default" : "outline"}
+          size="sm"
+          onClick={() => setShowFilters(!showFilters)}
+          className="gap-2"
+        >
+          <Filter className="w-4 h-4" />
+          Filtros
+          {hasActiveFilters && <span className="w-2 h-2 rounded-full bg-destructive" />}
+        </Button>
+        {hasActiveFilters && (
+          <Button variant="ghost" size="sm" onClick={clearFilters}>
+            Limpar filtros
+          </Button>
+        )}
+        <span className="text-sm text-muted-foreground ml-auto">
+          {filteredInfracoes.length} resultado{filteredInfracoes.length !== 1 ? "s" : ""}
         </span>
       </div>
 
-      {/* Lista de Resultados */}
-      <ScrollArea className="flex-1 -mx-4 px-4 h-[calc(100vh-220px)]">
-        <div className="space-y-3 pb-24 pt-1">
-          {filteredInfracoes.length === 0 ? (
-            <div className="text-center py-12 opacity-60 flex flex-col items-center">
-              <div className="bg-muted p-4 rounded-full mb-3">
-                <Search className="h-8 w-8 text-muted-foreground" />
-              </div>
-              <p>Nenhuma infração encontrada</p>
+      {/* Filters */}
+      {showFilters && (
+        <Card>
+          <CardContent className="p-4 space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Categoria</label>
+              <Select value={categoriaFilter} onValueChange={setCategoriaFilter}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Todas as categorias" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas as categorias</SelectItem>
+                  {categorias.map((cat) => (
+                    <SelectItem key={cat} value={cat}>
+                      {cat}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-          ) : (
-            filteredInfracoes.map((inf, idx) => {
-              // Garante que o fundamento legal seja exibido corretamente (Art + Inciso)
-              const displayArtigo = formatFundamento(inf.fundamento_legal || inf.artigo);
-              const isAberta = inf._tipo_multa_computado === 'aberta';
 
-              return (
-                <Card 
-                  key={idx} 
-                  onClick={() => setSelectedInfracao(inf)}
-                  className="group cursor-pointer border-l-[6px] border-l-primary hover:shadow-md transition-all active:scale-[0.98] overflow-hidden bg-white mb-3 border-y-0 border-r-0 shadow-sm"
-                >
-                  <CardContent className="p-4">
-                    <div className="flex justify-between items-start gap-3">
-                      <div className="flex-1 space-y-2">
-                        {/* Cabeçalho do Card: Artigo + Tipo */}
-                        <div className="flex items-center flex-wrap gap-2">
-                          <span className="font-bold text-sm bg-primary/10 text-primary px-2 py-0.5 rounded border border-primary/20">
-                            {displayArtigo}
-                          </span>
-                          <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full ${
-                            isAberta ? 'bg-[#1f5a33] text-white' : 'bg-[#4a3622] text-white'
-                          }`}>
-                            {isAberta ? 'Multa Aberta' : 'Multa Fechada'}
-                          </span>
-                        </div>
-                        
-                        {/* Resumo da Infração */}
-                        <h3 className="text-sm font-medium text-foreground leading-snug">
-                          {inf.resumo}
-                        </h3>
-                        
-                        {/* Categoria */}
-                        <p className="text-[11px] text-muted-foreground font-medium flex items-center gap-1">
-                          <span className="w-1.5 h-1.5 rounded-full bg-secondary inline-block"></span>
-                          {inf._categoria}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Tipo de Multa</label>
+              <Select value={tipoMultaFilter} onValueChange={setTipoMultaFilter}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Todos os tipos" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos os tipos</SelectItem>
+                  <SelectItem value="aberta">Multa Aberta</SelectItem>
+                  <SelectItem value="fechada">Multa Fechada</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Results */}
+      <ScrollArea className="h-[calc(100vh-300px)]">
+        <div className="space-y-2 pr-2">
+          {filteredInfracoes.length === 0 ? (
+            <Card>
+              <CardContent className="p-6 text-center">
+                <AlertCircle className="w-10 h-10 mx-auto text-muted-foreground mb-2" />
+                <p className="text-muted-foreground">Nenhuma infração encontrada com os filtros atuais.</p>
+              </CardContent>
+            </Card>
+          ) : (
+            filteredInfracoes.map((inf, idx) => (
+              <Card
+                key={idx}
+                className="cursor-pointer hover:bg-muted/50 active:bg-muted transition-colors"
+                onClick={() => setSelectedInfracao(inf)}
+              >
+                <CardContent className="p-4">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        {extractArtigo(inf.fundamento_legal) && (
+                          <Badge variant="outline" className="text-xs font-semibold shrink-0">
+                            {extractArtigo(inf.fundamento_legal)}
+                          </Badge>
+                        )}
+                        <Badge
+                          variant={inf._tipo_multa_computado === "aberta" ? "default" : "secondary"}
+                          className="text-xs"
+                        >
+                          {inf._tipo_multa_computado === "aberta" ? "Aberta" : "Fechada"}
+                        </Badge>
+                      </div>
+                      <h3 className="font-medium text-sm line-clamp-2 mb-1">{inf.resumo}</h3>
+                      <p className="text-xs text-muted-foreground line-clamp-1">{inf._categoria}</p>
+                      {inf.valor_minimo != null && inf.valor_maximo != null && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {formatCurrency(inf.valor_minimo)} - {formatCurrency(inf.valor_maximo)}
                         </p>
-                      </div>
-                      
-                      <div className="h-full flex items-center justify-center">
-                        <ChevronRight className="h-5 w-5 text-muted-foreground/40 group-hover:text-primary transition-colors" />
-                      </div>
+                      )}
                     </div>
-                  </CardContent>
-                </Card>
-              );
-            })
+                    <ChevronRight className="w-5 h-5 text-muted-foreground flex-shrink-0" />
+                  </div>
+                </CardContent>
+              </Card>
+            ))
           )}
         </div>
       </ScrollArea>
 
-      {/* Detalhes (Sheet) */}
+      {/* Detail Sheet */}
       <Sheet open={!!selectedInfracao} onOpenChange={() => setSelectedInfracao(null)}>
-        <SheetContent side="bottom" className="h-[90vh] rounded-t-[20px] px-0 pb-0 flex flex-col bg-[#f5f7f4]">
-          <SheetHeader className="px-6 pt-6 pb-4 text-left border-b bg-white rounded-t-[20px]">
-            <div className="flex items-center gap-2 mb-2">
-              <Badge className="bg-primary text-white hover:bg-primary/90 text-sm py-1 px-3">
-                {formatFundamento(selectedInfracao?.fundamento_legal || selectedInfracao?.artigo)}
-              </Badge>
-            </div>
-            <SheetTitle className="text-lg leading-snug font-bold text-primary">
-              {selectedInfracao?.resumo}
-            </SheetTitle>
+        <SheetContent side="bottom" className="h-[85vh] rounded-t-2xl">
+          <SheetHeader>
+            <SheetTitle className="text-left pr-8">Detalhes da Infração</SheetTitle>
           </SheetHeader>
-          
-          <ScrollArea className="flex-1 px-6 bg-[#f5f7f4]">
-            <div className="py-6 space-y-6">
-              
-              {/* Card de Descrição */}
-              <div className="bg-white p-4 rounded-xl shadow-sm border border-black/5">
-                <h4 className="text-xs font-bold text-muted-foreground uppercase mb-2 flex items-center gap-2">
-                  <FileText className="h-4 w-4" /> Descrição Completa
-                </h4>
-                <p className="text-sm text-foreground/90 leading-relaxed">
-                  {selectedInfracao?.descricao_completa || selectedInfracao?.descricao}
-                </p>
-              </div>
+          {selectedInfracao && (
+            <ScrollArea className="h-[calc(85vh-140px)] mt-4">
+              <div className="space-y-4 pb-6">
+                <div>
+                  <div className="flex items-center gap-2 mb-2">
+                    {extractArtigo(selectedInfracao.fundamento_legal) && (
+                      <Badge variant="outline" className="text-sm font-semibold">
+                        {extractArtigo(selectedInfracao.fundamento_legal)}
+                      </Badge>
+                    )}
+                    <Badge className="text-xs">{selectedInfracao._categoria}</Badge>
+                  </div>
+                  <h2 className="text-lg font-semibold">{selectedInfracao.resumo}</h2>
+                </div>
 
-              {/* Card de Valores */}
-              <div className="bg-white p-4 rounded-xl shadow-sm border border-black/5">
-                <h4 className="text-xs font-bold text-muted-foreground uppercase mb-3 flex items-center gap-2">
-                  <Scale className="h-4 w-4" /> Parâmetros da Multa
-                </h4>
-                
-                {selectedInfracao?._tipo_multa_computado === 'aberta' ? (
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="p-3 bg-green-50 rounded-lg border border-green-100">
-                      <span className="text-xs text-green-700 font-semibold block mb-1">Mínimo</span>
-                      <span className="text-lg font-bold text-green-900 block">
-                        {formatCurrency(selectedInfracao?.valor_minimo || 0)}
-                      </span>
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <FileText className="w-4 h-4" />
+                      Descrição Completa
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-sm text-muted-foreground">{selectedInfracao.descricao_completa}</p>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <Scale className="w-4 h-4" />
+                      Fundamento Legal
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-sm text-muted-foreground">{selectedInfracao.fundamento_legal}</p>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardContent className="p-4 space-y-3">
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-muted-foreground">Tipo de Multa</span>
+                      <Badge variant={selectedInfracao._tipo_multa_computado === "aberta" ? "default" : "secondary"}>
+                        {selectedInfracao._tipo_multa_computado === "aberta" ? "Aberta" : "Fechada"}
+                      </Badge>
                     </div>
-                    <div className="p-3 bg-red-50 rounded-lg border border-red-100">
-                      <span className="text-xs text-red-700 font-semibold block mb-1">Máximo</span>
-                      <span className="text-lg font-bold text-red-900 block">
-                        {formatCurrency(selectedInfracao?.valor_maximo || 0)}
-                      </span>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="p-4 bg-orange-50 rounded-lg border border-orange-100 flex justify-between items-center">
-                    <div>
-                      <span className="text-xs text-orange-700 font-semibold block mb-1">Valor por Unidade</span>
-                      <span className="text-xl font-bold text-orange-900">
-                        {formatCurrency(selectedInfracao?.valor_por_unidade || 0)}
-                      </span>
-                    </div>
-                    <Badge variant="outline" className="bg-white border-orange-200 text-orange-800">
-                      {selectedInfracao?.unidade_de_medida || 'unidade'}
-                    </Badge>
-                  </div>
+
+                    {selectedInfracao.valor_minimo != null && (
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-muted-foreground">Valor Mínimo</span>
+                        <span className="font-medium">{formatCurrency(selectedInfracao.valor_minimo)}</span>
+                      </div>
+                    )}
+
+                    {selectedInfracao.valor_maximo != null && (
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-muted-foreground">Valor Máximo</span>
+                        <span className="font-medium">{formatCurrency(selectedInfracao.valor_maximo)}</span>
+                      </div>
+                    )}
+
+                    {selectedInfracao.valor_por_unidade != null && (
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-muted-foreground">Valor por Unidade</span>
+                        <span className="font-medium">{formatCurrency(selectedInfracao.valor_por_unidade)}</span>
+                      </div>
+                    )}
+
+                    {selectedInfracao.unidade_de_medida && (
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-muted-foreground">Unidade de Medida</span>
+                        <span className="font-medium">{selectedInfracao.unidade_de_medida}</span>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+
+                {selectedInfracao.criterios_aplicacao && (
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm">Critérios de Aplicação</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-sm text-muted-foreground">{selectedInfracao.criterios_aplicacao}</p>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {selectedInfracao.observacoes && (
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm">Observações</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-sm text-muted-foreground">{selectedInfracao.observacoes}</p>
+                    </CardContent>
+                  </Card>
                 )}
               </div>
+            </ScrollArea>
+          )}
 
-              {/* Observações */}
-              {(selectedInfracao?.observacoes || selectedInfracao?.observacao) && (
-                <div className="bg-blue-50 p-4 rounded-xl border border-blue-100">
-                  <h4 className="text-xs font-bold text-blue-700 uppercase mb-2 flex items-center gap-2">
-                    <AlertCircle className="h-4 w-4" /> Observações
-                  </h4>
-                  <p className="text-sm text-blue-900">
-                    {selectedInfracao.observacoes || selectedInfracao.observacao}
-                  </p>
-                </div>
-              )}
+          {selectedInfracao && (
+            <div className="absolute bottom-0 left-0 right-0 p-4 bg-background border-t">
+              <Button onClick={handleSelectThisInfracao} className="w-full gap-2">
+                <CheckCircle className="w-4 h-4" />
+                Selecionar esta Infração
+              </Button>
             </div>
-          </ScrollArea>
-
-          {/* Botão de Ação */}
-          <div className="p-4 border-t bg-white safe-area-bottom shadow-lg z-20">
-            <Button 
-              className="w-full h-14 text-base font-bold shadow-lg bg-primary hover:bg-primary/90 text-white rounded-xl" 
-              onClick={() => {
-                if(selectedInfracao) onSelectInfracao(selectedInfracao);
-                setSelectedInfracao(null);
-              }}
-            >
-              <CheckCircle className="mr-2 h-6 w-6" />
-              Selecionar para Cálculo
-            </Button>
-          </div>
+          )}
         </SheetContent>
       </Sheet>
     </div>
