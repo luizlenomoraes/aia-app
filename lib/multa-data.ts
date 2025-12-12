@@ -1,3 +1,4 @@
+// ... existing code ...
 export const regrasPercentuais = {
   "2000000": {
     // Até 2 milhões
@@ -136,4 +137,17 @@ export const atenuantesOptions = [
   { id: "at3", label: "Arrependimento eficaz (reparação do dano)" },
   { id: "at4", label: "Comunicação imediata do perigo ambiental" },
   { id: "at5", label: "Colaboração com a fiscalização" },
+]
+
+export const sancoesOptions = [
+  { id: "san1", label: "ADVERTÊNCIA" },
+  { id: "san2", label: "MULTA SIMPLES" },
+  { id: "san3", label: "MULTA DIÁRIA" },
+  { id: "san4", label: "APREENSÃO" },
+  { id: "san5", label: "DESTRUIÇÃO OU INUTILIZAÇÃO DO PRODUTO" },
+  { id: "san6", label: "SUSPENSÃO DE VENDA E FABRICAÇÃO DO PRODUTO" },
+  { id: "san7", label: "EMBARGO DE OBRA OU ATIVIDADE" },
+  { id: "san8", label: "DEMOLIÇÃO DE OBRA" },
+  { id: "san9", label: "SUSPENSÃO PARCIAL OU TOTAL DE ATIVIDADES" },
+  { id: "san10", label: "RESTRITIVA DE DIREITOS" },
 ]
