@@ -1,343 +1,2169 @@
-"use client"
-
-import { useState, useMemo } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Button } from "@/components/ui/button"
-import { ScrollArea } from "@/components/ui/scroll-area"
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet"
-import { Badge } from "@/components/ui/badge"
-import { Search, Filter, ChevronRight, X, FileText, Scale, AlertCircle, CheckCircle } from "lucide-react"
-import { infracoesData, type Infracao } from "@/lib/infracoes-data"
-import { formatCurrency } from "@/lib/utils"
-
-interface InfracoesTabProps {
-  onSelectInfracao: (infracao: Infracao) => void
+export interface Infracao {
+  resumo: string
+  descricao_completa: string
+  fundamento_legal: string
+  natureza_multa?: string
+  valor_minimo?: number
+  valor_maximo?: number
+  valor_por_unidade?: number | null
+  unidade_de_medida?: string | null
+  criterios_aplicacao?: string
+  observacoes?: string
+  _categoria?: string
+  _tipo_multa_computado?: "aberta" | "fechada"
 }
 
-function extractArtigo(fundamento: string | undefined): string {
-  if (!fundamento) return ""
-  const match = fundamento.match(/Art\.?\s*(\d+)/i)
-  return match ? `Art. ${match[1]}` : ""
+interface InfracaoBloco {
+  tipo_infracao: string
+  infracoes: Infracao[]
 }
 
-function getArtigoNumber(fundamento: string | undefined): number {
-  if (!fundamento) return 9999
-  const match = fundamento.match(/Art\.?\s*(\d+)/i)
-  return match ? Number.parseInt(match[1], 10) : 9999
-}
+function detectTipoMulta(item: Infracao): "aberta" | "fechada" {
+  try {
+    const txt = `${item.descricao_completa || ""} ${item.resumo || ""} ${item.fundamento_legal || ""}`.replace(
+      /\s+/g,
+      " ",
+    )
 
-// Função para remover acentos e caracteres especiais para busca
-function normalizeText(text: string): string {
-  return text
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-}
+    const hasRangeText = /R\$\s*\d{1,3}(\.\d{3})*,\d{2}\s*(?:a|até)\s*R\$\s*\d{1,3}(\.\d{3})*,\d{2}/i.test(txt)
+    const vmin = (item.valor_minimo || "").toString().trim()
+    const vmax = (item.valor_maximo || "").toString().trim()
+    const hasIntervalFields = vmin && vmax && vmin !== vmax
+    const hasUnitFields = !!item.valor_por_unidade || !!item.unidade_de_medida
+    const natureField = (item.natureza_multa || "").toString().toLowerCase()
 
-export function InfracoesTab({ onSelectInfracao }: InfracoesTabProps) {
-  const [searchQuery, setSearchQuery] = useState("")
-  const [categoriaFilter, setCategoriaFilter] = useState("")
-  const [tipoMultaFilter, setTipoMultaFilter] = useState("")
-  const [selectedInfracao, setSelectedInfracao] = useState<Infracao | null>(null)
-  const [showFilters, setShowFilters] = useState(false)
+    if (hasRangeText || hasIntervalFields) return "aberta"
+    if (hasUnitFields) return "fechada"
+    if (natureField === "aberta" || natureField === "fechada") return natureField as "aberta" | "fechada"
 
-  const categorias = useMemo(() => {
-    const cats = new Set<string>()
-    infracoesData.forEach((bloco) => cats.add(bloco.tipo_infracao))
-    return Array.from(cats).sort()
-  }, [])
+    const unitHints =
+      /(por\s+(quilo|kg|hectare|árvore|árvores|unidade|indivíduo|exemplar|m³|metro\s*cúbico|m2|m²|m3|litro|litros|peça|peças|fração))/i
+    if (unitHints.test(txt)) return "fechada"
 
-  const filteredInfracoes = useMemo(() => {
-    const allInfracoes: Infracao[] = []
-    infracoesData.forEach((bloco) => {
-      bloco.infracoes.forEach((inf) => {
-        allInfracoes.push({
-          ...inf,
-          _categoria: bloco.tipo_infracao,
-        })
-      })
-    })
-
-    allInfracoes.sort((a, b) => getArtigoNumber(a.fundamento_legal) - getArtigoNumber(b.fundamento_legal))
-
-    // Prepara o termo de busca normalizado
-    const normalizedQuery = normalizeText(searchQuery)
-
-    return allInfracoes.filter((inf) => {
-      // Busca insensível a acentos
-      const searchableText = `${inf.resumo || ""} ${inf.descricao_completa || ""} ${inf.fundamento_legal || ""}`
-      const matchesSearch = !searchQuery || normalizeText(searchableText).includes(normalizedQuery)
-
-      const matchesCategoria = !categoriaFilter || inf._categoria === categoriaFilter
-
-      const matchesTipoMulta = !tipoMultaFilter || inf._tipo_multa_computado === tipoMultaFilter
-
-      return matchesSearch && matchesCategoria && matchesTipoMulta
-    })
-  }, [searchQuery, categoriaFilter, tipoMultaFilter])
-
-  const clearFilters = () => {
-    setSearchQuery("")
-    setCategoriaFilter("")
-    setTipoMultaFilter("")
+    return "aberta"
+  } catch {
+    return "aberta"
   }
-
-  const hasActiveFilters = searchQuery || categoriaFilter || tipoMultaFilter
-
-  const handleSelectThisInfracao = () => {
-    if (selectedInfracao) {
-      onSelectInfracao(selectedInfracao)
-      setSelectedInfracao(null)
-    }
-  }
-
-  return (
-    <div className="space-y-4">
-      {/* Search */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-        <Input
-          type="search"
-          placeholder="Buscar (ex: fauna, pesca, art 40)..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="pl-10 pr-10"
-        />
-        {searchQuery && (
-          <button
-            onClick={() => setSearchQuery("")}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        )}
-      </div>
-
-      {/* Filter Toggle */}
-      <div className="flex items-center gap-2">
-        <Button
-          variant={showFilters ? "default" : "outline"}
-          size="sm"
-          onClick={() => setShowFilters(!showFilters)}
-          className="gap-2"
-        >
-          <Filter className="w-4 h-4" />
-          Filtros
-          {hasActiveFilters && <span className="w-2 h-2 rounded-full bg-destructive" />}
-        </Button>
-        {hasActiveFilters && (
-          <Button variant="ghost" size="sm" onClick={clearFilters}>
-            Limpar filtros
-          </Button>
-        )}
-        <span className="text-xs text-muted-foreground ml-auto">
-          {filteredInfracoes.length} infrações
-        </span>
-      </div>
-
-      {/* Filters */}
-      {showFilters && (
-        <Card>
-          <CardContent className="p-4 space-y-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Categoria</label>
-              <Select value={categoriaFilter} onValueChange={setCategoriaFilter}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Todas as categorias" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todas as categorias</SelectItem>
-                  {categorias.map((cat) => (
-                    <SelectItem key={cat} value={cat}>
-                      {cat}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Tipo de Multa</label>
-              <Select value={tipoMultaFilter} onValueChange={setTipoMultaFilter}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Todos os tipos" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todos os tipos</SelectItem>
-                  <SelectItem value="aberta">Multa Aberta</SelectItem>
-                  <SelectItem value="fechada">Multa Fechada</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Results */}
-      <ScrollArea className="h-[calc(100vh-300px)]">
-        <div className="space-y-2 pr-2 pb-20">
-          {filteredInfracoes.length === 0 ? (
-            <Card>
-              <CardContent className="p-6 text-center">
-                <AlertCircle className="w-10 h-10 mx-auto text-muted-foreground mb-2" />
-                <p className="text-muted-foreground">Nenhuma infração encontrada.</p>
-              </CardContent>
-            </Card>
-          ) : (
-            filteredInfracoes.map((inf, idx) => (
-              <Card
-                key={idx}
-                className="cursor-pointer hover:bg-muted/50 active:bg-muted transition-colors"
-                onClick={() => setSelectedInfracao(inf)}
-              >
-                <CardContent className="p-4">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex flex-wrap items-center gap-2 mb-2">
-                        {extractArtigo(inf.fundamento_legal) && (
-                          <Badge variant="outline" className="text-xs font-semibold shrink-0">
-                            {extractArtigo(inf.fundamento_legal)}
-                          </Badge>
-                        )}
-                        <Badge
-                          variant={inf._tipo_multa_computado === "aberta" ? "default" : "secondary"}
-                          className="text-xs"
-                        >
-                          {inf._tipo_multa_computado === "aberta" ? "Aberta" : "Fechada"}
-                        </Badge>
-                      </div>
-                      {/* Adicionado break-words para evitar estouro horizontal */}
-                      <h3 className="font-medium text-sm leading-snug break-words mb-1">{inf.resumo}</h3>
-                      <p className="text-xs text-muted-foreground line-clamp-1">{inf._categoria}</p>
-                    </div>
-                    <ChevronRight className="w-5 h-5 text-muted-foreground flex-shrink-0 mt-2" />
-                  </div>
-                </CardContent>
-              </Card>
-            ))
-          )}
-        </div>
-      </ScrollArea>
-
-      {/* Detail Sheet */}
-      <Sheet open={!!selectedInfracao} onOpenChange={() => setSelectedInfracao(null)}>
-        <SheetContent side="bottom" className="h-[90vh] rounded-t-xl p-0 flex flex-col">
-          <SheetHeader className="p-4 border-b">
-            <SheetTitle className="text-left pr-8">Detalhes da Infração</SheetTitle>
-          </SheetHeader>
-          
-          {selectedInfracao && (
-            <div className="flex-1 overflow-y-auto p-4 pb-24">
-              <div className="space-y-5">
-                <div>
-                  <div className="flex flex-wrap items-center gap-2 mb-3">
-                    {extractArtigo(selectedInfracao.fundamento_legal) && (
-                      <Badge variant="outline" className="text-sm font-semibold">
-                        {extractArtigo(selectedInfracao.fundamento_legal)}
-                      </Badge>
-                    )}
-                    <Badge className="text-xs break-all">{selectedInfracao._categoria}</Badge>
-                  </div>
-                  {/* Título com quebra de linha forçada */}
-                  <h2 className="text-lg font-bold leading-snug break-words whitespace-normal">
-                    {selectedInfracao.resumo}
-                  </h2>
-                </div>
-
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm flex items-center gap-2">
-                      <FileText className="w-4 h-4" />
-                      Descrição Completa
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    {/* Descrição com quebra de linha e espaçamento */}
-                    <p className="text-sm text-muted-foreground break-words whitespace-pre-wrap leading-relaxed">
-                      {selectedInfracao.descricao_completa}
-                    </p>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm flex items-center gap-2">
-                      <Scale className="w-4 h-4" />
-                      Fundamento Legal
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="text-sm text-muted-foreground break-words">
-                      {selectedInfracao.fundamento_legal}
-                    </p>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardContent className="p-4 space-y-3">
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-muted-foreground">Tipo de Multa</span>
-                      <Badge variant={selectedInfracao._tipo_multa_computado === "aberta" ? "default" : "secondary"}>
-                        {selectedInfracao._tipo_multa_computado === "aberta" ? "Aberta" : "Fechada"}
-                      </Badge>
-                    </div>
-
-                    {selectedInfracao.valor_minimo != null && (
-                      <div className="flex justify-between items-center">
-                        <span className="text-sm text-muted-foreground">Valor Mínimo</span>
-                        <span className="font-medium">{formatCurrency(selectedInfracao.valor_minimo)}</span>
-                      </div>
-                    )}
-
-                    {selectedInfracao.valor_maximo != null && (
-                      <div className="flex justify-between items-center">
-                        <span className="text-sm text-muted-foreground">Valor Máximo</span>
-                        <span className="font-medium">{formatCurrency(selectedInfracao.valor_maximo)}</span>
-                      </div>
-                    )}
-
-                    {selectedInfracao.valor_por_unidade != null && (
-                      <div className="flex justify-between items-center">
-                        <span className="text-sm text-muted-foreground">Valor por Unidade</span>
-                        <span className="font-medium">{formatCurrency(selectedInfracao.valor_por_unidade)}</span>
-                      </div>
-                    )}
-
-                    {selectedInfracao.unidade_de_medida && (
-                      <div className="flex justify-between items-center gap-2">
-                        <span className="text-sm text-muted-foreground shrink-0">Unidade</span>
-                        <span className="font-medium text-right text-sm">{selectedInfracao.unidade_de_medida}</span>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-
-                {selectedInfracao.criterios_aplicacao && (
-                  <Card>
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-sm">Critérios de Aplicação</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <p className="text-sm text-muted-foreground break-words">{selectedInfracao.criterios_aplicacao}</p>
-                    </CardContent>
-                  </Card>
-                )}
-              </div>
-            </div>
-          )}
-
-          {selectedInfracao && (
-            <div className="p-4 bg-background border-t mt-auto">
-              <Button onClick={handleSelectThisInfracao} className="w-full gap-2 h-12 text-base shadow-lg">
-                <CheckCircle className="w-5 h-5" />
-                Selecionar esta Infração
-              </Button>
-            </div>
-          )}
-        </SheetContent>
-      </Sheet>
-    </div>
-  )
 }
+
+const rawData: InfracaoBloco[] = [
+  {
+    "tipo_infracao": "FAUNA",
+    "infracoes": [
+      {
+        "resumo": "Matar, perseguir, caçar, apanhar, coletar, utilizar espécimes da fauna silvestre, nativos ou em rota migratória,",
+        "descricao_completa": "Matar, perseguir, caçar, apanhar, coletar, utilizar \nespécimes da fauna silvestre, nativos ou em rota migratória, sem a devida permissão, licença ou autorização da autoridade competente, ou em desacordo \ncom a obtida. Multa de: I - R$ 500,00 (quinhentos reais) por indivíduo de espécie não constante de listas oficiais de risco ou ameaça de extinção;",
+        "fundamento_legal": "Art. 40, I",
+        "natureza_multa": "FECHADA",
+        "valor_minimo": null,
+        "valor_maximo": null,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "§ 1º Incorre nas mesmas multas: I - quem impede a procriação da fauna, sem licença, autorização ou em desacordo com a obtida; II - quem modifica, danifica ou destrói ninho, abrigo ou criadouro natural; ou II - quem modifica, danifica ou destrói ninho, abrigo ou criadouro natural; ou \nIII - quem vende, expõe à venda, exporta ou adquire, guarda, tem em cativeiro ou depósito, utiliza ou transporta ovos, larvas ou espécimes da fauna silvestre, nativa ou em rota migratória, bem como produtos e objetos dela oriundos, provenientes de criadouros não autorizados, sem a devida permissão, licença ou autorização da autoridade competente ou em desacordo com a obtida. § 2º Na impossibilidade de aplicação do critério de unidade por espécime para a fixação da multa, aplicar-se-á o valor de R$ 500,00 (quinhentos reais) por quilograma ou fração. § 3º As multas serão aplicadas em dobro se a infração for praticada com finalidade de obter vantagem pecuniária. § 4º No caso de guarda doméstica de espécime silvestre não considerada ameaçada de extinção, pode a autoridade competente, considerando as circunstâncias, deixar de aplicar a multa. § 5º No caso de guarda de espécime silvestre, deve a autoridade competente deixar de aplicar as sanções previstas neste Código, quando o infrator espontaneamente entregar os animais ao órgão ambiental competente. § 6º Caso a quantidade ou espécie constatada no ato fiscalizatório esteja em desacordo com o autorizado pela Autoridade competente, o agente autuante promoverá a autuação considerando a totalidade do objeto da fiscalização. § 7º São espécimes da fauna silvestre, para os efeitos deste Decreto, todos os organismos incluídos no reino animal, pertencentes às espécies nativas, migratórias e quaisquer outras não exóticas, aquáticas ou terrestres, que tenham todo ou parte de seu ciclo original de vida ocorrendo dentro dos limites do território brasileiro ou em águas jurisdicionais brasileiras. § 8º A coleta de material destinado a fins científicos somente é considerada infração, nos termos deste artigo, quando se caracterizar, pelo seu resultado, como danosa ao meio ambiente.",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "§ 1º Incorre nas mesmas multas: I - quem impede a procriação da fauna, sem licença, autorização ou em desacordo com a obtida; II - quem modifica, danifica ou destrói ninho, abrigo ou criadouro natural; ou II - quem modifica, danifica ou destrói ninho, abrigo ou criadouro natural; ou \nIII - quem vende, expõe à venda, exporta ou adquire, guarda, tem em cativeiro ou depósito, utiliza ou transporta ovos, larvas ou espécimes da fauna silvestre, nativa ou em rota migratória, bem como produtos e objetos dela oriundos, provenientes de criadouros não autorizados, sem a devida permissão, licença ou autorização da autoridade competente ou em desacordo com a obtida. § 2º Na impossibilidade de aplicação do critério de unidade por espécime para a fixação da multa, aplicar-se-á o valor de R$ 500,00 (quinhentos reais) por quilograma ou fração. § 3º As multas serão aplicadas em dobro se a infração for praticada com finalidade de obter vantagem pecuniária. § 4º No caso de guarda doméstica de espécime silvestre não considerada ameaçada de extinção, pode a autoridade competente, considerando as circunstâncias, deixar de aplicar a multa. § 5º No caso de guarda de espécime silvestre, deve a autoridade competente deixar de aplicar as sanções previstas neste Código, quando o infrator espontaneamente entregar os animais ao órgão ambiental competente. § 6º Caso a quantidade ou espécie constatada no ato fiscalizatório esteja em desacordo com o autorizado pela Autoridade competente, o agente autuante promoverá a autuação considerando a totalidade do objeto da fiscalização. § 7º São espécimes da fauna silvestre, para os efeitos deste Decreto, todos os organismos incluídos no reino animal, pertencentes às espécies nativas, migratórias e quaisquer outras não exóticas, aquáticas ou terrestres, que tenham todo ou parte de seu ciclo original de vida ocorrendo dentro dos limites do território brasileiro ou em águas jurisdicionais brasileiras. § 8º A coleta de material destinado a fins científicos somente é considerada infração, nos termos deste artigo, quando se caracterizar, pelo seu resultado, como danosa ao meio ambiente. | Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "R$ 500,00 por indivíduo",
+        "fixo": "R$ 500,00 por indivíduo"
+      },
+      {
+        "resumo": "Matar, perseguir, caçar, apanhar, coletar, utilizar espécimes da fauna silvestre, nativos ou em rota migratória,",
+        "descricao_completa": "Matar, perseguir, caçar, apanhar, coletar, utilizar \nespécimes da fauna silvestre, nativos ou em rota migratória, sem a devida permissão, licença ou autorização da autoridade competente, ou em desacordo \ncom a obtida. Multa de: II - R$ 5.000,00 (cinco mil reais), por indivíduo de espécie constante de listas oficiais de fauna brasileira ameaçada de extinção, inclusive da Convenção de Comércio Internacional das Espécies da Flora e Fauna Selvagens em Perigo de Extinção – CITES.",
+        "fundamento_legal": "Art. 40, II",
+        "natureza_multa": "FECHADA",
+        "valor_minimo": null,
+        "valor_maximo": null,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "§ 1º Incorre nas mesmas multas: I - quem impede a procriação da fauna, sem licença, autorização ou em desacordo com a obtida; II - quem modifica, danifica ou destrói ninho, abrigo ou criadouro natural; ou II - quem modifica, danifica ou destrói ninho, abrigo ou criadouro natural; ou \nIII - quem vende, expõe à venda, exporta ou adquire, guarda, tem em cativeiro ou depósito, utiliza ou transporta ovos, larvas ou espécimes da fauna silvestre, nativa ou em rota migratória, bem como produtos e objetos dela oriundos, provenientes de criadouros não autorizados, sem a devida permissão, licença ou autorização da autoridade competente ou em desacordo com a obtida. § 2º Na impossibilidade de aplicação do critério de unidade por espécime para a fixação da multa, aplicar-se-á o valor de R$ 500,00 (quinhentos reais) por quilograma ou fração. § 3º As multas serão aplicadas em dobro se a infração for praticada com finalidade de obter vantagem pecuniária. § 4º No caso de guarda doméstica de espécime silvestre não considerada ameaçada de extinção, pode a autoridade competente, considerando as circunstâncias, deixar de aplicar a multa. § 5º No caso de guarda de espécime silvestre, deve a autoridade competente deixar de aplicar as sanções previstas neste Código, quando o infrator espontaneamente entregar os animais ao órgão ambiental competente. § 6º Caso a quantidade ou espécie constatada no ato fiscalizatório esteja em desacordo com o autorizado pela Autoridade competente, o agente autuante promoverá a autuação considerando a totalidade do objeto da fiscalização. § 7º São espécimes da fauna silvestre, para os efeitos deste Decreto, todos os organismos incluídos no reino animal, pertencentes às espécies nativas, migratórias e quaisquer outras não exóticas, aquáticas ou terrestres, que tenham todo ou parte de seu ciclo original de vida ocorrendo dentro dos limites do território brasileiro ou em águas jurisdicionais brasileiras. § 8º A coleta de material destinado a fins científicos somente é considerada infração, nos termos deste artigo, quando se caracterizar, pelo seu resultado, como danosa ao meio ambiente.",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "§ 1º Incorre nas mesmas multas: I - quem impede a procriação da fauna, sem licença, autorização ou em desacordo com a obtida; II - quem modifica, danifica ou destrói ninho, abrigo ou criadouro natural; ou II - quem modifica, danifica ou destrói ninho, abrigo ou criadouro natural; ou \nIII - quem vende, expõe à venda, exporta ou adquire, guarda, tem em cativeiro ou depósito, utiliza ou transporta ovos, larvas ou espécimes da fauna silvestre, nativa ou em rota migratória, bem como produtos e objetos dela oriundos, provenientes de criadouros não autorizados, sem a devida permissão, licença ou autorização da autoridade competente ou em desacordo com a obtida. § 2º Na impossibilidade de aplicação do critério de unidade por espécime para a fixação da multa, aplicar-se-á o valor de R$ 500,00 (quinhentos reais) por quilograma ou fração. § 3º As multas serão aplicadas em dobro se a infração for praticada com finalidade de obter vantagem pecuniária. § 4º No caso de guarda doméstica de espécime silvestre não considerada ameaçada de extinção, pode a autoridade competente, considerando as circunstâncias, deixar de aplicar a multa. § 5º No caso de guarda de espécime silvestre, deve a autoridade competente deixar de aplicar as sanções previstas neste Código, quando o infrator espontaneamente entregar os animais ao órgão ambiental competente. § 6º Caso a quantidade ou espécie constatada no ato fiscalizatório esteja em desacordo com o autorizado pela Autoridade competente, o agente autuante promoverá a autuação considerando a totalidade do objeto da fiscalização. § 7º São espécimes da fauna silvestre, para os efeitos deste Decreto, todos os organismos incluídos no reino animal, pertencentes às espécies nativas, migratórias e quaisquer outras não exóticas, aquáticas ou terrestres, que tenham todo ou parte de seu ciclo original de vida ocorrendo dentro dos limites do território brasileiro ou em águas jurisdicionais brasileiras. § 8º A coleta de material destinado a fins científicos somente é considerada infração, nos termos deste artigo, quando se caracterizar, pelo seu resultado, como danosa ao meio ambiente. | Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "R$ 5.000,00 por indivíduo",
+        "fixo": "R$ 5.000,00 por indivíduo"
+      },
+      {
+        "resumo": "Introduzir espécime animal silvestre, nativo ou exótico, no Estado.",
+        "descricao_completa": "Introduzir espécime animal silvestre, nativo ou exótico, \nno Estado, sem parecer técnico oficial favorável e licença expedida pela Autoridade competente, quando exigível:",
+        "fundamento_legal": "Art. 41, I",
+        "natureza_multa": "FECHADA",
+        "valor_minimo": 2000,
+        "valor_maximo": null,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "§ 1º Entende-se por introdução de espécime animal no Estado, além do ato de ingresso nas fronteiras nacionais, a guarda e manutenção continuada a qualquer tempo. § 2º Incorre nas mesmas penas quem reintroduz na natureza espécime da fauna silvestre sem parecer técnico oficial favorável e licença expedida pela Autoridade competente, quando exigível.",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "§ 1º Entende-se por introdução de espécime animal no Estado, além do ato de ingresso nas fronteiras nacionais, a guarda e manutenção continuada a qualquer tempo. § 2º Incorre nas mesmas penas quem reintroduz na natureza espécime da fauna silvestre sem parecer técnico oficial favorável e licença expedida pela Autoridade competente, quando exigível. | Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "R$ 2.000,00 com acrescimo de R$ 200,00 (duzentos reais), por indivíduo de espécie não constante em listas oficiais de espécies em risco ou ameaçadas de extinção",
+        "fixo": "R$ 2.000,00 com acrescimo de R$ 200,00 (duzentos reais), por indivíduo de espécie não constante em listas oficiais de espécies em risco ou ameaçadas de extinção"
+      },
+      {
+        "resumo": "Introduzir espécime animal silvestre, nativo ou exótico, no Estado.",
+        "descricao_completa": "Introduzir espécime animal silvestre, nativo ou exótico, \nno Estado, sem parecer técnico oficial favorável e licença expedida pela Autoridade competente, quando exigível:",
+        "fundamento_legal": "Art. 41, II",
+        "natureza_multa": "FECHADA",
+        "valor_minimo": 2000,
+        "valor_maximo": null,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "§ 1º Entende-se por introdução de espécime animal no Estado, além do ato de ingresso nas fronteiras nacionais, a guarda e manutenção continuada a qualquer tempo. § 2º Incorre nas mesmas penas quem reintroduz na natureza espécime da fauna silvestre sem parecer técnico oficial favorável e licença expedida pela Autoridade competente, quando exigível.",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "§ 1º Entende-se por introdução de espécime animal no Estado, além do ato de ingresso nas fronteiras nacionais, a guarda e manutenção continuada a qualquer tempo. § 2º Incorre nas mesmas penas quem reintroduz na natureza espécime da fauna silvestre sem parecer técnico oficial favorável e licença expedida pela Autoridade competente, quando exigível. | Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "R$ 2.000,00 com acrescimo de R$ 5.000,00 (cinco mil reais), por indivíduo de espécie constante de listas oficiais de fauna brasileira ameaçada de extinção, inclusive da CITES.",
+        "fixo": "R$ 2.000,00 com acrescimo de R$ 5.000,00 (cinco mil reais), por indivíduo de espécie constante de listas oficiais de fauna brasileira ameaçada de extinção, inclusive da CITES."
+      },
+      {
+        "resumo": "Exportar peles e couros de anfíbios e répteis em bruto, sem autorização da autoridade competente:",
+        "descricao_completa": "Exportar peles e couros de anfíbios e répteis em bruto, sem autorização da autoridade competente:",
+        "fundamento_legal": "Art. 42, I",
+        "natureza_multa": "FECHADA",
+        "valor_minimo": 2000,
+        "valor_maximo": null,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "Parágrafo único. Caso a quantidade ou espécie constatada no ato fiscalizatório esteja em desacordo com o autorizado pela autoridade competente, o agente autuante promoverá a autuação considerando a totalidade do objeto da fiscalização.",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "Parágrafo único. Caso a quantidade ou espécie constatada no ato fiscalizatório esteja em desacordo com o autorizado pela autoridade competente, o agente autuante promoverá a autuação considerando a totalidade do objeto da fiscalização. | Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "R$ 2.000,00 com acrescimo de R$ 200,00 (duzentos reais), por indivíduo de espécie não constante em listas oficiais de espécies em risco ou ameaçadas de extinção",
+        "fixo": "R$ 2.000,00 com acrescimo de R$ 200,00 (duzentos reais), por indivíduo de espécie não constante em listas oficiais de espécies em risco ou ameaçadas de extinção"
+      },
+      {
+        "resumo": "Exportar peles e couros de anfíbios e répteis em bruto, sem autorização da autoridade competente:",
+        "descricao_completa": "Exportar peles e couros de anfíbios e répteis em bruto, sem autorização da autoridade competente:",
+        "fundamento_legal": "Art. 42, II",
+        "natureza_multa": "FECHADA",
+        "valor_minimo": 2000,
+        "valor_maximo": null,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "Parágrafo único. Caso a quantidade ou espécie constatada no ato fiscalizatório esteja em desacordo com o autorizado pela autoridade competente, o agente autuante promoverá a autuação considerando a totalidade do objeto da fiscalização.",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "Parágrafo único. Caso a quantidade ou espécie constatada no ato fiscalizatório esteja em desacordo com o autorizado pela autoridade competente, o agente autuante promoverá a autuação considerando a totalidade do objeto da fiscalização. | Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "R$ 2.000,00 com acrescimo de R$ 5.000,00 (cinco mil reais), por indivíduo de espécie constante de listas oficiais de fauna brasileira ameaçada de extinção, inclusive da CITES.",
+        "fixo": "R$ 2.000,00 com acrescimo de R$ 5.000,00 (cinco mil reais), por indivíduo de espécie constante de listas oficiais de fauna brasileira ameaçada de extinção, inclusive da CITES."
+      },
+      {
+        "resumo": "Praticar caça profissional:",
+        "descricao_completa": "Praticar caça profissional:",
+        "fundamento_legal": "Art. 43, I",
+        "natureza_multa": "FECHADA",
+        "valor_minimo": 5000,
+        "valor_maximo": null,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "R$ 5.000,00 (cinco mil reais), com acréscimo de R$ 500,00 (quinhentos reais) por indivíduo capturado",
+        "fixo": "R$ 5.000,00 (cinco mil reais), com acréscimo de R$ 500,00 (quinhentos reais) por indivíduo capturado"
+      },
+      {
+        "resumo": "Praticar caça profissional:",
+        "descricao_completa": "Praticar caça profissional:",
+        "fundamento_legal": "Art. 43, II",
+        "natureza_multa": "FECHADA",
+        "valor_minimo": 5000,
+        "valor_maximo": null,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "R$ 5.000,00 (cinco mil reais), com acréscimo de R$ 10.000,00 (dez mil reais) por indivíduo de espécie constante de listas oficiais de fauna brasileira ameaçada de extinção, inclusive da CITES.",
+        "fixo": "R$ 5.000,00 (cinco mil reais), com acréscimo de R$ 10.000,00 (dez mil reais) por indivíduo de espécie constante de listas oficiais de fauna brasileira ameaçada de extinção, inclusive da CITES."
+      },
+      {
+        "resumo": "Comercializar produtos, instrumentos e objetos que impliquem a caça",
+        "descricao_completa": "Comercializar produtos, instrumentos e objetos que impliquem a caça, perseguição, destruição ou apanha de espécimes da fauna \nsilvestre:",
+        "fundamento_legal": "Art. 44",
+        "natureza_multa": "FECHADA",
+        "valor_minimo": 1000,
+        "valor_maximo": null,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "R$ 1.000,00 (mil reais), com acréscimo de R$ 200,00 (duzentos reais), por unidade excedente.",
+        "fixo": "R$ 1.000,00 (mil reais), com acréscimo de R$ 200,00 (duzentos reais), por unidade excedente."
+      },
+      {
+        "resumo": "Praticar ato de abuso, maus-tratos, ferir ou mutilar animais",
+        "descricao_completa": "Praticar ato de abuso, maus-tratos, ferir ou mutilar \nanimais silvestres, domésticos ou domesticados, nativos ou exóticos:",
+        "fundamento_legal": "Art. 45",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 500,
+        "valor_maximo": 3000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      },
+      {
+        "resumo": "Deixarem, o jardim zoológico e os criadouros \nautorizados, de ter o livro de registro do acervo faunístico ou mantê-lo de \nforma irregular:",
+        "descricao_completa": "Deixarem, o jardim zoológico e os criadouros \nautorizados, de ter o livro de registro do acervo faunístico ou mantê-lo de forma irregular:",
+        "fundamento_legal": "Art. 46",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 500,
+        "valor_maximo": 5000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "Parágrafo único. Incorre na mesma multa quem deixa de manter registro de acervo faunístico e movimentação de plantel em sistemas informatizados de controle de fauna ou fornece dados inconsistentes ou fraudados.",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "Parágrafo único. Incorre na mesma multa quem deixa de manter registro de acervo faunístico e movimentação de plantel em sistemas informatizados de controle de fauna ou fornece dados inconsistentes ou fraudados. | Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      },
+      {
+        "resumo": "Deixar, o comerciante, de apresentar declaração de estoque e valores oriundos de comércio de animais silvestres:",
+        "descricao_completa": "Deixar, o comerciante, de apresentar declaração de \nestoque e valores oriundos de comércio de animais silvestres:",
+        "fundamento_legal": "Art. 47",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 200,
+        "valor_maximo": 10000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      },
+      {
+        "resumo": "Explorar ou fazer uso comercial de imagem de animal silvestre mantido irregularmente em cativeiro ou em situação de abuso ou \nmaus-tratos:",
+        "descricao_completa": "Explorar ou fazer uso comercial de imagem de animal \nsilvestre mantido irregularmente em cativeiro ou em situação de abuso ou maus-tratos:",
+        "fundamento_legal": "Art. 48",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 5000,
+        "valor_maximo": 500000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      },
+      {
+        "resumo": "Causar degradação em viveiros, açudes ou estação de aquicultura de domínio público:",
+        "descricao_completa": "Causar degradação em viveiros, açudes ou estação de aquicultura de domínio público:",
+        "fundamento_legal": "Art. 49",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 5000,
+        "valor_maximo": 500000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      },
+      {
+        "resumo": "Pescar em período ou local no qual a pesca seja proibida:",
+        "descricao_completa": "Pescar em período ou local no qual a pesca seja \nproibida:",
+        "fundamento_legal": "Art. 50",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 700,
+        "valor_maximo": 100000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "Parágrafo único. Incorre nas mesmas multas quem: I - pesca espécies que devam ser preservadas ou espécimes com tamanhos inferiores aos permitidos; II - pesca quantidades superiores às permitidas ou mediante a utilização de aparelhos, petrechos, técnicas e métodos não permitidos; III - transporta, comercializa, beneficia ou industrializa espécimes provenientes da coleta, apanha e pesca proibida; IV - transporta, conserva, beneficia, descaracteriza, industrializa ou comercializa pescados ou produtos originados da pesca, sem comprovante de origem ou autorização do órgão competente;  V - captura, extrai, coleta, transporta, comercializa ou exporta espécimes de espécies ornamentais oriundos da pesca, sem autorização do órgão competente ou em desacordo com a obtida; e VI - deixa de apresentar declaração de estoque.",
+        "observacao_2": "Art. 53. A comercialização do produto da pesca de que trata esta Subseção agravará a penalidade da respectiva infração quando esta incidir sobre espécies sobre explotadas ou ameaçadas de sobre-exploração, conforme regulamento do órgão ambiental competente, com o acréscimo de: I - R$ 40,00 (quarenta reais) por quilo ou fração do produto da pesca de espécie constante das listas oficiais brasileiras de espécies ameaçadas de sobre explotação; ou II - R$ 60,00 (sessenta reais) por quilo ou fração do produto da pesca de espécie constante das listas oficiais brasileiras de espécies sobre explotadas.",
+        "observacao_3": "Art. 55. Para os efeitos deste Decreto, considera-se pesca todo ato tendente a extrair, retirar, coletar, apanhar, apreender ou capturar espécimes dos grupos dos peixes, suscetíveis ou não de aproveitamento econômico, ressalvadas as espécies ameaçadas de extinção, constantes nas listas oficiais da fauna e da flora. Parágrafo único. Entende-se por ato tendente à pesca aquele em que o infrator esteja munido, equipado ou armado com petrechos de pesca, na área de pesca ou dirigindo-se a ela.",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "Parágrafo único. Incorre nas mesmas multas quem: I - pesca espécies que devam ser preservadas ou espécimes com tamanhos inferiores aos permitidos; II - pesca quantidades superiores às permitidas ou mediante a utilização de aparelhos, petrechos, técnicas e métodos não permitidos; III - transporta, comercializa, beneficia ou industrializa espécimes provenientes da coleta, apanha e pesca proibida; IV - transporta, conserva, beneficia, descaracteriza, industrializa ou comercializa pescados ou produtos originados da pesca, sem comprovante de origem ou autorização do órgão competente;  V - captura, extrai, coleta, transporta, comercializa ou exporta espécimes de espécies ornamentais oriundos da pesca, sem autorização do órgão competente ou em desacordo com a obtida; e VI - deixa de apresentar declaração de estoque. | Art. 53. A comercialização do produto da pesca de que trata esta Subseção agravará a penalidade da respectiva infração quando esta incidir sobre espécies sobre explotadas ou ameaçadas de sobre-exploração, conforme regulamento do órgão ambiental competente, com o acréscimo de: I - R$ 40,00 (quarenta reais) por quilo ou fração do produto da pesca de espécie constante das listas oficiais brasileiras de espécies ameaçadas de sobre explotação; ou II - R$ 60,00 (sessenta reais) por quilo ou fração do produto da pesca de espécie constante das listas oficiais brasileiras de espécies sobre explotadas. | Art. 55. Para os efeitos deste Decreto, considera-se pesca todo ato tendente a extrair, retirar, coletar, apanhar, apreender ou capturar espécimes dos grupos dos peixes, suscetíveis ou não de aproveitamento econômico, ressalvadas as espécies ameaçadas de extinção, constantes nas listas oficiais da fauna e da flora. Parágrafo único. Entende-se por ato tendente à pesca aquele em que o infrator esteja munido, equipado ou armado com petrechos de pesca, na área de pesca ou dirigindo-se a ela. | Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "acréscimo de R$ 20,00 (vinte reais) por quilo ou fração do produto da pescaria ou por espécime, quando se tratar de produto de pesca para uso ornamental.",
+        "fixo": "acréscimo de R$ 20,00 (vinte reais) por quilo ou fração do produto da pescaria ou por espécime, quando se tratar de produto de pesca para uso ornamental."
+      },
+      {
+        "resumo": "Pescar mediante a utilização de explosivos ou \nsubstâncias tóxicas",
+        "descricao_completa": "Pescar mediante a utilização de explosivos ou \nsubstâncias que, em contato com a água, produzam efeitos semelhantes, ou  substâncias tóxicas, ou ainda, por outro meio proibido pela autoridade  competente:",
+        "fundamento_legal": "Art. 51",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 700,
+        "valor_maximo": 100000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "",
+        "observacao_2": "Art. 53. A comercialização do produto da pesca de que trata esta Subseção agravará a penalidade da respectiva infração quando esta incidir sobre espécies sobre explotadas ou ameaçadas de sobre-exploração, conforme regulamento do órgão ambiental competente, com o acréscimo de: I - R$ 40,00 (quarenta reais) por quilo ou fração do produto da pesca de espécie constante das listas oficiais brasileiras de espécies ameaçadas de sobre explotação; ou II - R$ 60,00 (sessenta reais) por quilo ou fração do produto da pesca de espécie constante das listas oficiais brasileiras de espécies sobre explotadas.",
+        "observacao_3": "Art. 55. Para os efeitos deste Decreto, considera-se pesca todo ato tendente a extrair, retirar, coletar, apanhar, apreender ou capturar espécimes dos grupos dos peixes, suscetíveis ou não de aproveitamento econômico, ressalvadas as espécies ameaçadas de extinção, constantes nas listas oficiais da fauna e da flora. Parágrafo único. Entende-se por ato tendente à pesca aquele em que o infrator esteja munido, equipado ou armado com petrechos de pesca, na área de pesca ou dirigindo-se a ela.",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "Art. 53. A comercialização do produto da pesca de que trata esta Subseção agravará a penalidade da respectiva infração quando esta incidir sobre espécies sobre explotadas ou ameaçadas de sobre-exploração, conforme regulamento do órgão ambiental competente, com o acréscimo de: I - R$ 40,00 (quarenta reais) por quilo ou fração do produto da pesca de espécie constante das listas oficiais brasileiras de espécies ameaçadas de sobre explotação; ou II - R$ 60,00 (sessenta reais) por quilo ou fração do produto da pesca de espécie constante das listas oficiais brasileiras de espécies sobre explotadas. | Art. 55. Para os efeitos deste Decreto, considera-se pesca todo ato tendente a extrair, retirar, coletar, apanhar, apreender ou capturar espécimes dos grupos dos peixes, suscetíveis ou não de aproveitamento econômico, ressalvadas as espécies ameaçadas de extinção, constantes nas listas oficiais da fauna e da flora. Parágrafo único. Entende-se por ato tendente à pesca aquele em que o infrator esteja munido, equipado ou armado com petrechos de pesca, na área de pesca ou dirigindo-se a ela. | Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "acréscimo de R$ 20,00 (vinte reais) por quilo ou fração do produto da pescaria.",
+        "fixo": "acréscimo de R$ 20,00 (vinte reais) por quilo ou fração do produto da pescaria."
+      },
+      {
+        "resumo": "Exercer a pesca sem prévio cadastro",
+        "descricao_completa": "Exercer a pesca sem prévio cadastro, inscrição, \nautorização, licença, permissão ou registro do órgão competente, ou em desacordo com o obtido:",
+        "fundamento_legal": "Art. 52",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 300,
+        "valor_maximo": 10000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "Parágrafo único. Caso a quantidade ou espécie constatada no ato fiscalizatório esteja em desacordo com o autorizado pela Autoridade competente, o agente autuante promoverá a autuação considerando a totalidade do objeto da fiscalização.",
+        "observacao_2": "Art. 53. A comercialização do produto da pesca de que trata esta Subseção agravará a penalidade da respectiva infração quando esta incidir sobre espécies sobre explotadas ou ameaçadas de sobre-exploração, conforme regulamento do órgão ambiental competente, com o acréscimo de: I - R$ 40,00 (quarenta reais) por quilo ou fração do produto da pesca de espécie constante das listas oficiais brasileiras de espécies ameaçadas de sobre explotação; ou II - R$ 60,00 (sessenta reais) por quilo ou fração do produto da pesca de espécie constante das listas oficiais brasileiras de espécies sobre explotadas.",
+        "observacao_3": "Art. 55. Para os efeitos deste Decreto, considera-se pesca todo ato tendente a extrair, retirar, coletar, apanhar, apreender ou capturar espécimes dos grupos dos peixes, suscetíveis ou não de aproveitamento econômico, ressalvadas as espécies ameaçadas de extinção, constantes nas listas oficiais da fauna e da flora. Parágrafo único. Entende-se por ato tendente à pesca aquele em que o infrator esteja munido, equipado ou armado com petrechos de pesca, na área de pesca ou dirigindo-se a ela.",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "Parágrafo único. Caso a quantidade ou espécie constatada no ato fiscalizatório esteja em desacordo com o autorizado pela Autoridade competente, o agente autuante promoverá a autuação considerando a totalidade do objeto da fiscalização. | Art. 53. A comercialização do produto da pesca de que trata esta Subseção agravará a penalidade da respectiva infração quando esta incidir sobre espécies sobre explotadas ou ameaçadas de sobre-exploração, conforme regulamento do órgão ambiental competente, com o acréscimo de: I - R$ 40,00 (quarenta reais) por quilo ou fração do produto da pesca de espécie constante das listas oficiais brasileiras de espécies ameaçadas de sobre explotação; ou II - R$ 60,00 (sessenta reais) por quilo ou fração do produto da pesca de espécie constante das listas oficiais brasileiras de espécies sobre explotadas. | Art. 55. Para os efeitos deste Decreto, considera-se pesca todo ato tendente a extrair, retirar, coletar, apanhar, apreender ou capturar espécimes dos grupos dos peixes, suscetíveis ou não de aproveitamento econômico, ressalvadas as espécies ameaçadas de extinção, constantes nas listas oficiais da fauna e da flora. Parágrafo único. Entende-se por ato tendente à pesca aquele em que o infrator esteja munido, equipado ou armado com petrechos de pesca, na área de pesca ou dirigindo-se a ela. | Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "acréscimo de R$ 20,00 (vinte reais) por quilo ou fração do produto da pesca ou por espécime, quando se tratar de produto de pesca para ornamentação.",
+        "fixo": "acréscimo de R$ 20,00 (vinte reais) por quilo ou fração do produto da pesca ou por espécime, quando se tratar de produto de pesca para ornamentação."
+      },
+      {
+        "resumo": "Deixarem, os comandantes de embarcações destinadas à pesca, de preencher e entregar, ao fim de cada viagem ou semanalmente, os  mapas fornecidos pelo órgão competente",
+        "descricao_completa": "Deixarem, os comandantes de embarcações destinadas à pesca, de preencher e entregar, ao fim de cada viagem ou semanalmente, os  mapas fornecidos pelo órgão competente:",
+        "fundamento_legal": "Art. 54",
+        "natureza_multa": "FECHADA",
+        "valor_minimo": null,
+        "valor_maximo": null,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "1000",
+        "fixo": "1000"
+      }
+    ]
+  },
+  {
+    "tipo_infracao": "FLORA",
+    "infracoes": [
+      {
+        "resumo": "Destruir ou danificar florestas ou demais formas de vegetação natural ou utilizá-las com infringência das normas de proteção em área de APP",
+        "descricao_completa": "Destruir ou danificar florestas ou demais formas de vegetação natural ou utilizá-las com infringência das normas de proteção em área considerada de preservação permanente, sem autorização do órgão competente, quando exigível, ou em desacordo com a obtida",
+        "fundamento_legal": "Art. 56",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 5000,
+        "valor_maximo": 50000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "Por hectare ou fração.",
+        "observacao_2": "Art. 77. As sanções administrativas previstas nesta seção serão aumentadas até o dobro quando: I - a infração for consumada mediante uso de fogo ou provocação de incêndio, ressalvado os casos previstos nos artigos 59, 73, 74 deste Decreto; e II - a infração afetar terra indígena.",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "Por hectare ou fração. | Art. 77. As sanções administrativas previstas nesta seção serão aumentadas até o dobro quando: I - a infração for consumada mediante uso de fogo ou provocação de incêndio, ressalvado os casos previstos nos artigos 59, 73, 74 deste Decreto; e II - a infração afetar terra indígena. | Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      },
+      {
+        "resumo": "Realizar o corte seletivo de árvores",
+        "descricao_completa": "Realizar o corte seletivo de árvores em área considerada de preservação permanente ou cuja espécie seja especialmente protegida ou considerada imune de corte, sem permissão da autoridade competente",
+        "fundamento_legal": "Art. 57",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 5000,
+        "valor_maximo": 20000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "por hectare ou fração, ou R$ 500,00 (quinhentos reais) por árvore, metro cúbico ou fração.",
+        "observacao_2": "Art. 77. As sanções administrativas previstas nesta seção serão aumentadas até o dobro quando: I - a infração for consumada mediante uso de fogo ou provocação de incêndio, ressalvado os casos previstos nos artigos 59, 73, 74 deste Decreto; e II - a infração afetar terra indígena.",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "por hectare ou fração, ou R$ 500,00 (quinhentos reais) por árvore, metro cúbico ou fração. | Art. 77. As sanções administrativas previstas nesta seção serão aumentadas até o dobro quando: I - a infração for consumada mediante uso de fogo ou provocação de incêndio, ressalvado os casos previstos nos artigos 59, 73, 74 deste Decreto; e II - a infração afetar terra indígena. | Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      },
+      {
+        "resumo": "Extração de espécies minerais de florestas públicas",
+        "descricao_completa": "Extrair de florestas de domínio público ou áreas de preservação permanente, sem prévia autorização, pedra, areia, cal ou qualquer espécie de minerais:",
+        "fundamento_legal": "Art. 58",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 5000,
+        "valor_maximo": 50000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "Por hectare ou fração.",
+        "observacao_2": "Art. 77. As sanções administrativas previstas nesta seção serão aumentadas até o dobro quando: I - a infração for consumada mediante uso de fogo ou provocação de incêndio, ressalvado os casos previstos nos artigos 59, 73, 74 deste Decreto; e II - a infração afetar terra indígena.",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "Por hectare ou fração. | Art. 77. As sanções administrativas previstas nesta seção serão aumentadas até o dobro quando: I - a infração for consumada mediante uso de fogo ou provocação de incêndio, ressalvado os casos previstos nos artigos 59, 73, 74 deste Decreto; e II - a infração afetar terra indígena. | Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      },
+      {
+        "resumo": "Produção de carvão sem licença",
+        "descricao_completa": "Transformar madeira oriunda de floresta ou demais formas de vegetação nativa em carvão, para fins industriais, energéticos ou para qualquer outra exploração, econômica ou não, sem licença ou em desacordo com as determinações legais",
+        "fundamento_legal": "Art. 59",
+        "natureza_multa": "FECHADA",
+        "valor_minimo": 500,
+        "valor_maximo": null,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "R$ 500,00 (quinhentos reais) por metro cúbico de carvão-mdc.",
+        "fixo": "R$ 500,00 (quinhentos reais) por metro cúbico de carvão-mdc."
+      },
+      {
+        "resumo": "Receber ou adquirir  madeira serrada ou em tora, lenha, carvão ou outros produtos de origem vegetal, sem licença ou DOF",
+        "descricao_completa": "Receber ou adquirir, para fins comerciais ou industriais, madeira serrada ou em tora, lenha, carvão ou outros produtos de origem vegetal, sem exigir a exibição de licença do vendedor, outorgada pela autoridade competente, e sem se munir da via que deverá acompanhar o produto até final beneficiamento",
+        "fundamento_legal": "Art. 60",
+        "natureza_multa": "FECHADA",
+        "valor_minimo": 300,
+        "valor_maximo": null,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "por unidade, estéreo, quilo, mdc ou metro cúbico aferido pelo método geométrico.",
+        "observacao_2": "§ 2º Considera-se licença válida para todo o tempo da viagem ou do armazenamento aquela cuja autenticidade seja confirmada pelos sistemas de controle eletrônico oficiais, inclusive no que diz respeito à quantidade e espécie autorizada para transporte e armazenamento. § 3º Nas infrações de transporte, caso a quantidade ou espécie constatada no ato fiscalizatório esteja em desacordo com o autorizado pela autoridade competente, o agente autuante promoverá a autuação considerando a totalidade do objeto da fiscalização. § 4º Para as demais infrações previstas neste artigo, o agente autuante promoverá a autuação considerando o volume integral de madeira, lenha, carvão ou outros produtos de origem vegetal que não guarde correspondência com aquele autorizado pela autoridade competente, em razão da quantidade ou espécie.",
+        "observacao_3": "Art. 77. As sanções administrativas previstas nesta seção serão aumentadas até o dobro quando: I - a infração for consumada mediante uso de fogo ou provocação de incêndio, ressalvado os casos previstos nos artigos 59, 73, 74 deste Decreto; e II - a infração afetar terra indígena.",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "por unidade, estéreo, quilo, mdc ou metro cúbico aferido pelo método geométrico. | § 2º Considera-se licença válida para todo o tempo da viagem ou do armazenamento aquela cuja autenticidade seja confirmada pelos sistemas de controle eletrônico oficiais, inclusive no que diz respeito à quantidade e espécie autorizada para transporte e armazenamento. § 3º Nas infrações de transporte, caso a quantidade ou espécie constatada no ato fiscalizatório esteja em desacordo com o autorizado pela autoridade competente, o agente autuante promoverá a autuação considerando a totalidade do objeto da fiscalização. § 4º Para as demais infrações previstas neste artigo, o agente autuante promoverá a autuação considerando o volume integral de madeira, lenha, carvão ou outros produtos de origem vegetal que não guarde correspondência com aquele autorizado pela autoridade competente, em razão da quantidade ou espécie. | Art. 77. As sanções administrativas previstas nesta seção serão aumentadas até o dobro quando: I - a infração for consumada mediante uso de fogo ou provocação de incêndio, ressalvado os casos previstos nos artigos 59, 73, 74 deste Decreto; e II - a infração afetar terra indígena. | Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "300",
+        "fixo": "300"
+      },
+      {
+        "resumo": "Vender, ter em depósito, transportar, ou guardar madeira, lenha, carvão ou outros produtos de origem vegetal sem licença",
+        "descricao_completa": "Incorre nas mesmas multas quem vende, expõe à venda, tem em depósito, transporta ou guarda madeira, lenha, carvão ou outros produtos de origem vegetal, sem licença válida para todo o tempo da viagem ou do armazenamento, outorgada pela autoridade competente ou em desacordo com a obtida",
+        "fundamento_legal": "Art. 60 § 1º",
+        "natureza_multa": "FECHADA",
+        "valor_minimo": 300,
+        "valor_maximo": null,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "por unidade, estéreo, quilo, mdc ou metro cúbico aferido pelo método geométrico.",
+        "observacao_2": "§ 2º Considera-se licença válida para todo o tempo da viagem ou do armazenamento aquela cuja autenticidade seja confirmada pelos sistemas de controle eletrônico oficiais, inclusive no que diz respeito à quantidade e espécie autorizada para transporte e armazenamento. § 3º Nas infrações de transporte, caso a quantidade ou espécie constatada no ato fiscalizatório esteja em desacordo com o autorizado pela autoridade competente, o agente autuante promoverá a autuação considerando a totalidade do objeto da fiscalização. § 4º Para as demais infrações previstas neste artigo, o agente autuante promoverá a autuação considerando o volume integral de madeira, lenha, carvão ou outros produtos de origem vegetal que não guarde correspondência com aquele autorizado pela autoridade competente, em razão da quantidade ou espécie.",
+        "observacao_3": "Art. 77. As sanções administrativas previstas nesta seção serão aumentadas até o dobro quando: I - a infração for consumada mediante uso de fogo ou provocação de incêndio, ressalvado os casos previstos nos artigos 59, 73, 74 deste Decreto; e II - a infração afetar terra indígena.",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "por unidade, estéreo, quilo, mdc ou metro cúbico aferido pelo método geométrico. | § 2º Considera-se licença válida para todo o tempo da viagem ou do armazenamento aquela cuja autenticidade seja confirmada pelos sistemas de controle eletrônico oficiais, inclusive no que diz respeito à quantidade e espécie autorizada para transporte e armazenamento. § 3º Nas infrações de transporte, caso a quantidade ou espécie constatada no ato fiscalizatório esteja em desacordo com o autorizado pela autoridade competente, o agente autuante promoverá a autuação considerando a totalidade do objeto da fiscalização. § 4º Para as demais infrações previstas neste artigo, o agente autuante promoverá a autuação considerando o volume integral de madeira, lenha, carvão ou outros produtos de origem vegetal que não guarde correspondência com aquele autorizado pela autoridade competente, em razão da quantidade ou espécie. | Art. 77. As sanções administrativas previstas nesta seção serão aumentadas até o dobro quando: I - a infração for consumada mediante uso de fogo ou provocação de incêndio, ressalvado os casos previstos nos artigos 59, 73, 74 deste Decreto; e II - a infração afetar terra indígena. | Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "300",
+        "fixo": "300"
+      },
+      {
+        "resumo": "Impedir ou dificultar a regeneração natural de florestas ou demais formas de vegetação nativa",
+        "descricao_completa": "Impedir ou dificultar a regeneração natural de florestas ou demais formas de vegetação nativa em unidades de conservação ou outras áreas especialmente protegidas, quando couber, área de preservação permanente, reserva legal ou demais locais cuja regeneração tenha sido indicada pela autoridade competente.",
+        "fundamento_legal": "Art. 61",
+        "natureza_multa": "FECHADA",
+        "valor_minimo": 5000,
+        "valor_maximo": null,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "por hectare ou fração.",
+        "observacao_2": "Parágrafo único. O disposto no caput não se aplica para o uso permitido das áreas de preservação permanente.",
+        "observacao_3": "Art. 77. As sanções administrativas previstas nesta seção serão aumentadas até o dobro quando: I - a infração for consumada mediante uso de fogo ou provocação de incêndio, ressalvado os casos previstos nos artigos 59, 73, 74 deste Decreto; e II - a infração afetar terra indígena.",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "por hectare ou fração. | Parágrafo único. O disposto no caput não se aplica para o uso permitido das áreas de preservação permanente. | Art. 77. As sanções administrativas previstas nesta seção serão aumentadas até o dobro quando: I - a infração for consumada mediante uso de fogo ou provocação de incêndio, ressalvado os casos previstos nos artigos 59, 73, 74 deste Decreto; e II - a infração afetar terra indígena. | Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "5000",
+        "fixo": "5000"
+      },
+      {
+        "resumo": "Destruir ou danificar florestas ou qualquer tipo de vegetação nativa, objeto de especial preservação",
+        "descricao_completa": "Destruir ou danificar florestas ou qualquer tipo de vegetação nativa, objeto de especial preservação, não passíveis de autorização para exploração ou supressão",
+        "fundamento_legal": "Art. 62",
+        "natureza_multa": "FECHADA",
+        "valor_minimo": 6000,
+        "valor_maximo": null,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "por hectare ou fração.",
+        "observacao_2": "Art. 77. As sanções administrativas previstas nesta seção serão aumentadas até o dobro quando: I - a infração for consumada mediante uso de fogo ou provocação de incêndio, ressalvado os casos previstos nos artigos 59, 73, 74 deste Decreto; e II - a infração afetar terra indígena.",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "por hectare ou fração. | Art. 77. As sanções administrativas previstas nesta seção serão aumentadas até o dobro quando: I - a infração for consumada mediante uso de fogo ou provocação de incêndio, ressalvado os casos previstos nos artigos 59, 73, 74 deste Decreto; e II - a infração afetar terra indígena. | Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "6000",
+        "fixo": "6000"
+      },
+      {
+        "resumo": "Destruir ou danificar florestas ou qualquer tipo de vegetação nativa ou de espécies nativas plantadas, objeto de especial preservação",
+        "descricao_completa": "Destruir ou danificar florestas ou qualquer tipo de vegetação nativa ou de espécies nativas plantadas, objeto de especial preservação, sem autorização ou licença da Autoridade competente",
+        "fundamento_legal": "Art. 63",
+        "natureza_multa": "FECHADA",
+        "valor_minimo": 5000,
+        "valor_maximo": null,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "por hectare ou fração.",
+        "observacao_2": "Parágrafo único. Para os fins disposto neste artigo, são consideradas de especial preservação as florestas e demais formas de vegetação nativa que tenham regime jurídico próprio e especial de conservação ou preservação definido pela legislação.",
+        "observacao_3": "Art. 77. As sanções administrativas previstas nesta seção serão aumentadas até o dobro quando: I - a infração for consumada mediante uso de fogo ou provocação de incêndio, ressalvado os casos previstos nos artigos 59, 73, 74 deste Decreto; e II - a infração afetar terra indígena.",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "por hectare ou fração. | Parágrafo único. Para os fins disposto neste artigo, são consideradas de especial preservação as florestas e demais formas de vegetação nativa que tenham regime jurídico próprio e especial de conservação ou preservação definido pela legislação. | Art. 77. As sanções administrativas previstas nesta seção serão aumentadas até o dobro quando: I - a infração for consumada mediante uso de fogo ou provocação de incêndio, ressalvado os casos previstos nos artigos 59, 73, 74 deste Decreto; e II - a infração afetar terra indígena. | Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "5000",
+        "fixo": "5000"
+      },
+      {
+        "resumo": "Destruir, desmatar, danificar ou explorar floresta ou qualquer tipo de vegetação nativa ou de espécies nativas plantadas, em área de reserva legal ou servidão florestal, de domínio público ou privado",
+        "descricao_completa": "Destruir, desmatar, danificar ou explorar floresta ou qualquer tipo de vegetação nativa ou de espécies nativas plantadas, em área de reserva legal ou servidão florestal, de domínio público ou privado, sem autorização prévia do órgão ambiental competente ou em desacordo com a concedida",
+        "fundamento_legal": "Art. 64",
+        "natureza_multa": "FECHADA",
+        "valor_minimo": 5000,
+        "valor_maximo": null,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "por hectare ou fração.",
+        "observacao_2": "Art. 77. As sanções administrativas previstas nesta seção serão aumentadas até o dobro quando: I - a infração for consumada mediante uso de fogo ou provocação de incêndio, ressalvado os casos previstos nos artigos 59, 73, 74 deste Decreto; e II - a infração afetar terra indígena.",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "por hectare ou fração. | Art. 77. As sanções administrativas previstas nesta seção serão aumentadas até o dobro quando: I - a infração for consumada mediante uso de fogo ou provocação de incêndio, ressalvado os casos previstos nos artigos 59, 73, 74 deste Decreto; e II - a infração afetar terra indígena. | Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "5000",
+        "fixo": "5000"
+      },
+      {
+        "resumo": "Executar manejo florestal sem autorização",
+        "descricao_completa": "Executar manejo florestal sem autorização prévia do órgão ambiental competente, sem observar os requisitos técnicos estabelecidos em PMFS ou em desacordo com a autorização concedida",
+        "fundamento_legal": "Art. 65",
+        "natureza_multa": "FECHADA",
+        "valor_minimo": 1000,
+        "valor_maximo": null,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "por hectare ou fração.",
+        "observacao_2": "Art. 77. As sanções administrativas previstas nesta seção serão aumentadas até o dobro quando: I - a infração for consumada mediante uso de fogo ou provocação de incêndio, ressalvado os casos previstos nos artigos 59, 73, 74 deste Decreto; e II - a infração afetar terra indígena.",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "por hectare ou fração. | Art. 77. As sanções administrativas previstas nesta seção serão aumentadas até o dobro quando: I - a infração for consumada mediante uso de fogo ou provocação de incêndio, ressalvado os casos previstos nos artigos 59, 73, 74 deste Decreto; e II - a infração afetar terra indígena. | Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "1000",
+        "fixo": "1000"
+      },
+      {
+        "resumo": "Desmatamento",
+        "descricao_completa": "Desmatar, a corte raso, florestas ou demais formações nativas, fora da reserva legal, sem autorização da autoridade competente",
+        "fundamento_legal": "Art. 66",
+        "natureza_multa": "FECHADA",
+        "valor_minimo": 1000,
+        "valor_maximo": null,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "por hectare ou fração.",
+        "observacao_2": "Art. 77. As sanções administrativas previstas nesta seção serão aumentadas até o dobro quando: I - a infração for consumada mediante uso de fogo ou provocação de incêndio, ressalvado os casos previstos nos artigos 59, 73, 74 deste Decreto; e II - a infração afetar terra indígena.",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "por hectare ou fração. | Art. 77. As sanções administrativas previstas nesta seção serão aumentadas até o dobro quando: I - a infração for consumada mediante uso de fogo ou provocação de incêndio, ressalvado os casos previstos nos artigos 59, 73, 74 deste Decreto; e II - a infração afetar terra indígena. | Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "1000",
+        "fixo": "1000"
+      },
+      {
+        "resumo": "Explorar ou danificar floresta ou qualquer tipo de vegetação nativa",
+        "descricao_completa": "Explorar ou danificar floresta ou qualquer tipo de vegetação nativa ou de espécies nativas plantadas, localizada fora de área de reserva legal averbada, de domínio público ou privado, sem aprovação prévia do órgão ambiental competente ou em desacordo com a concedida. Parágrafo único. Incide nas mesmas penas quem deixa de cumprir a reposição florestal obrigatória.",
+        "fundamento_legal": "Art. 67",
+        "natureza_multa": "FECHADA",
+        "valor_minimo": 300,
+        "valor_maximo": null,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "por hectare ou fração, ou por unidade, estéreo, quilo, mdc ou metro cúbico.",
+        "observacao_2": "Parágrafo único. Incide nas mesmas penas quem deixa de cumprir a reposição florestal obrigatória.",
+        "observacao_3": "Art. 77. As sanções administrativas previstas nesta seção serão aumentadas até o dobro quando: I - a infração for consumada mediante uso de fogo ou provocação de incêndio, ressalvado os casos previstos nos artigos 59, 73, 74 deste Decreto; e II - a infração afetar terra indígena.",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "por hectare ou fração, ou por unidade, estéreo, quilo, mdc ou metro cúbico. | Parágrafo único. Incide nas mesmas penas quem deixa de cumprir a reposição florestal obrigatória. | Art. 77. As sanções administrativas previstas nesta seção serão aumentadas até o dobro quando: I - a infração for consumada mediante uso de fogo ou provocação de incêndio, ressalvado os casos previstos nos artigos 59, 73, 74 deste Decreto; e II - a infração afetar terra indígena. | Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "300",
+        "fixo": "300"
+      },
+      {
+        "resumo": "Deixar de averbar a reserva legal",
+        "descricao_completa": "Deixar de averbar a reserva legal",
+        "fundamento_legal": "Art. 69",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 50,
+        "valor_maximo": 500,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "por hectare ou fração da área de reserva legal.",
+        "observacao_2": "§ 1º O autuado será advertido para que, no prazo de cento e oitenta dias, apresente termo de compromisso de regularização da reserva legal, período em que a multa diária ficará suspensa.  2º Com o não cumprimento da obrigação prevista neste artigo, fica a autoridade competente autorizada a realizar a cobrança da multa diária a partir do dia da lavratura do auto de infração. § 3º As sanções previstas neste artigo não serão aplicadas quando o prazo previsto não for cumprido por culpa imputável exclusivamente ao órgão ambiental. § 4º O proprietário ou possuidor terá prazo de cento e vinte dias para averbar a localização, compensação ou desoneração da reserva legal, contados da emissão dos documentos por parte do órgão ambiental competente ou instituição habilitada. § 5º O tipo previsto neste artigo não se aplica ao proprietário ou possuidor de imóvel rural que realizar o registro da Reserva Legal no Cadastro Ambiental Rural – CAR no órgão ambiental, nos termos do § 4º do artigo 18, da Lei nº 12.651, de 25 de maio de 2012.",
+        "observacao_3": "Art. 77. As sanções administrativas previstas nesta seção serão aumentadas até o dobro quando: I - a infração for consumada mediante uso de fogo ou provocação de incêndio, ressalvado os casos previstos nos artigos 59, 73, 74 deste Decreto; e II - a infração afetar terra indígena.",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "por hectare ou fração da área de reserva legal. | § 1º O autuado será advertido para que, no prazo de cento e oitenta dias, apresente termo de compromisso de regularização da reserva legal, período em que a multa diária ficará suspensa.  2º Com o não cumprimento da obrigação prevista neste artigo, fica a autoridade competente autorizada a realizar a cobrança da multa diária a partir do dia da lavratura do auto de infração. § 3º As sanções previstas neste artigo não serão aplicadas quando o prazo previsto não for cumprido por culpa imputável exclusivamente ao órgão ambiental. § 4º O proprietário ou possuidor terá prazo de cento e vinte dias para averbar a localização, compensação ou desoneração da reserva legal, contados da emissão dos documentos por parte do órgão ambiental competente ou instituição habilitada. § 5º O tipo previsto neste artigo não se aplica ao proprietário ou possuidor de imóvel rural que realizar o registro da Reserva Legal no Cadastro Ambiental Rural – CAR no órgão ambiental, nos termos do § 4º do artigo 18, da Lei nº 12.651, de 25 de maio de 2012. | Art. 77. As sanções administrativas previstas nesta seção serão aumentadas até o dobro quando: I - a infração for consumada mediante uso de fogo ou provocação de incêndio, ressalvado os casos previstos nos artigos 59, 73, 74 deste Decreto; e II - a infração afetar terra indígena. | Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      },
+      {
+        "resumo": "Destruir, danificar, lesar ou maltratar, por qualquer modo ou meio, plantas de ornamentação de logradouros públicos ou em propriedade privada alheia",
+        "descricao_completa": "Destruir, danificar, lesar ou maltratar, por qualquer modo ou meio, plantas de ornamentação de logradouros públicos ou em propriedade privada alheia",
+        "fundamento_legal": "Art. 70",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 100,
+        "valor_maximo": 1000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "por unidade ou metro quadrado.",
+        "observacao_2": "Art. 77. As sanções administrativas previstas nesta seção serão aumentadas até o dobro quando: I - a infração for consumada mediante uso de fogo ou provocação de incêndio, ressalvado os casos previstos nos artigos 59, 73, 74 deste Decreto; e II - a infração afetar terra indígena.",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "por unidade ou metro quadrado. | Art. 77. As sanções administrativas previstas nesta seção serão aumentadas até o dobro quando: I - a infração for consumada mediante uso de fogo ou provocação de incêndio, ressalvado os casos previstos nos artigos 59, 73, 74 deste Decreto; e II - a infração afetar terra indígena. | Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      },
+      {
+        "resumo": "Comercializar, portar ou utilizar motoserra",
+        "descricao_completa": "Comercializar, portar ou utilizar em floresta ou demais formas de vegetação, motosserra sem licença ou registro da Autoridade competente",
+        "fundamento_legal": "Art. 71",
+        "natureza_multa": "FECHADA",
+        "valor_minimo": 1000,
+        "valor_maximo": null,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "por unidade.",
+        "observacao_2": "Art. 77. As sanções administrativas previstas nesta seção serão aumentadas até o dobro quando: I - a infração for consumada mediante uso de fogo ou provocação de incêndio, ressalvado os casos previstos nos artigos 59, 73, 74 deste Decreto; e II - a infração afetar terra indígena.",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "por unidade. | Art. 77. As sanções administrativas previstas nesta seção serão aumentadas até o dobro quando: I - a infração for consumada mediante uso de fogo ou provocação de incêndio, ressalvado os casos previstos nos artigos 59, 73, 74 deste Decreto; e II - a infração afetar terra indígena. | Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "1000",
+        "fixo": "1000"
+      },
+      {
+        "resumo": "Fazer uso de fogo",
+        "descricao_completa": "Fazer uso de fogo em áreas agropastoris sem autorização do órgão competente ou em desacordo com a obtida. Parágrafo único. A pena será quintuplicada quando praticada de forma dolosa em período de emergência climática declarada por ato do Poder Público.",
+        "fundamento_legal": "Art. 72",
+        "natureza_multa": "FECHADA",
+        "valor_minimo": 3000,
+        "valor_maximo": null,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "por hectare ou fração.",
+        "observacao_2": "Parágrafo único. A pena será quintuplicada quando praticada de forma dolosa em período de emergência climática declarada por ato do Poder Público.",
+        "observacao_3": "Art. 77. As sanções administrativas previstas nesta seção serão aumentadas até o dobro quando: I - a infração for consumada mediante uso de fogo ou provocação de incêndio, ressalvado os casos previstos nos artigos 59, 73, 74 deste Decreto; e II - a infração afetar terra indígena.",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "por hectare ou fração. | Parágrafo único. A pena será quintuplicada quando praticada de forma dolosa em período de emergência climática declarada por ato do Poder Público. | Art. 77. As sanções administrativas previstas nesta seção serão aumentadas até o dobro quando: I - a infração for consumada mediante uso de fogo ou provocação de incêndio, ressalvado os casos previstos nos artigos 59, 73, 74 deste Decreto; e II - a infração afetar terra indígena. | Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "3000",
+        "fixo": "3000"
+      },
+      {
+        "resumo": "Provocar incêndio em floresta",
+        "descricao_completa": "Provocar incêndio em floresta ou qualquer forma de vegetação nativa",
+        "fundamento_legal": "Art. 73",
+        "natureza_multa": "FECHADA",
+        "valor_minimo": 10000,
+        "valor_maximo": null,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "por hectare ou fração.",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "por hectare ou fração. | Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "10000",
+        "fixo": "10000"
+      },
+      {
+        "resumo": "Provocar incêndio em floresta cultivada",
+        "descricao_completa": "Provocar incêndio em floresta cultivada",
+        "fundamento_legal": "Art. 74",
+        "natureza_multa": "FECHADA",
+        "valor_minimo": 5000,
+        "valor_maximo": null,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "por hectare ou fração.",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "por hectare ou fração. | Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "5000",
+        "fixo": "5000"
+      },
+      {
+        "resumo": "Deixar de implementar, o responsável pelo imóvel rural, as ações de prevenção e de combate aos incêndios florestais em sua propriedade",
+        "descricao_completa": "Deixar de implementar, o responsável pelo imóvel rural, as ações de prevenção e de combate aos incêndios florestais em sua propriedade de acordo com as normas estabelecidas pelo Comitê Nacional de Manejo Integrado do Fogo e pelos órgãos competentes do Sisnama",
+        "fundamento_legal": "Art. 75",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 5000,
+        "valor_maximo": 10000000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "",
+        "observacao_2": "Art. 77. As sanções administrativas previstas nesta seção serão aumentadas até o dobro quando: I - a infração for consumada mediante uso de fogo ou provocação de incêndio, ressalvado os casos previstos nos artigos 59, 73, 74 deste Decreto; e II - a infração afetar terra indígena.",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "Art. 77. As sanções administrativas previstas nesta seção serão aumentadas até o dobro quando: I - a infração for consumada mediante uso de fogo ou provocação de incêndio, ressalvado os casos previstos nos artigos 59, 73, 74 deste Decreto; e II - a infração afetar terra indígena. | Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      },
+      {
+        "resumo": "Fabricar, vender, transportar ou soltar balões",
+        "descricao_completa": "Fabricar, vender, transportar ou soltar balões que possam provocar incêndios nas florestas e demais formas de vegetação, em áreas urbanas ou qualquer tipo de assentamento humano",
+        "fundamento_legal": "Art. 76",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 1000,
+        "valor_maximo": 10000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "por unidade",
+        "observacao_2": "Art. 77. As sanções administrativas previstas nesta seção serão aumentadas até o dobro quando: I - a infração for consumada mediante uso de fogo ou provocação de incêndio, ressalvado os casos previstos nos artigos 59, 73, 74 deste Decreto; e II - a infração afetar terra indígena.",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "por unidade | Art. 77. As sanções administrativas previstas nesta seção serão aumentadas até o dobro quando: I - a infração for consumada mediante uso de fogo ou provocação de incêndio, ressalvado os casos previstos nos artigos 59, 73, 74 deste Decreto; e II - a infração afetar terra indígena. | Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      }
+    ]
+  },
+  {
+    "tipo_infracao": "FAUNA/FLORA",
+    "infracoes": [
+      {
+        "resumo": "Adquirir, intermediar, transportar ou comercializar produto ou subproduto de origem animal ou vegetal produzido sobre área objeto de embargo",
+        "descricao_completa": "Adquirir, intermediar, transportar ou comercializar produto ou subproduto de origem animal ou vegetal produzido sobre área objeto de embargo. Parágrafo único. A aplicação do disposto neste artigo dependerá de prévia divulgação dos dados do imóvel rural, da área ou local embargado e do respectivo titular de que trata o § 1º do art. 18 e estará limitada à área onde efetivamente ocorreu o ilícito.",
+        "fundamento_legal": "Art. 68",
+        "natureza_multa": "FECHADA",
+        "valor_minimo": 500,
+        "valor_maximo": null,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "por quilograma ou unidade.",
+        "observacao_2": "Parágrafo único. A aplicação do disposto neste artigo dependerá de prévia divulgação dos dados do imóvel rural, da área ou local embargado e do respectivo titular de que trata o § 1º do art. 18 e estará limitada à área onde efetivamente ocorreu o ilícito.",
+        "observacao_3": "Art. 77. As sanções administrativas previstas nesta seção serão aumentadas até o dobro quando: I - a infração for consumada mediante uso de fogo ou provocação de incêndio, ressalvado os casos previstos nos artigos 59, 73, 74 deste Decreto; e II - a infração afetar terra indígena.",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "por quilograma ou unidade. | Parágrafo único. A aplicação do disposto neste artigo dependerá de prévia divulgação dos dados do imóvel rural, da área ou local embargado e do respectivo titular de que trata o § 1º do art. 18 e estará limitada à área onde efetivamente ocorreu o ilícito. | Art. 77. As sanções administrativas previstas nesta seção serão aumentadas até o dobro quando: I - a infração for consumada mediante uso de fogo ou provocação de incêndio, ressalvado os casos previstos nos artigos 59, 73, 74 deste Decreto; e II - a infração afetar terra indígena. | Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "500",
+        "fixo": "500"
+      }
+    ]
+  },
+  {
+    "tipo_infracao": "POLUIÇÃO E OUTRAS INFRAÇÕES",
+    "infracoes": [
+      {
+        "resumo": "Causar poluição de qualquer natureza",
+        "descricao_completa": "Causar poluição de qualquer natureza em níveis tais que resultem ou possam resultar em danos à saúde humana ou que provoquem a mortandade de animais ou a destruição significativa da biodiversidade. Parágrafo único. As multas e demais penalidades de que trata o caput serão aplicadas após laudo técnico ou Relatório Técnico Ambiental elaborado por técnico do órgão ambiental competente, identificando a dimensão do dano decorrente da infração e em conformidade com a gradação do impacto, sendo suficiente a potencialidade de dano à saúde humana para configuração da conduta infracional.",
+        "fundamento_legal": "Art. 78",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 1000,
+        "valor_maximo": 50000000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "Parágrafo único. As multas e demais penalidades de que trata o caput serão aplicadas após laudo técnico ou Relatório Técnico Ambiental elaborado por técnico do órgão ambiental competente, identificando a dimensão do dano decorrente da infração e em conformidade com a gradação do impacto, sendo suficiente a potencialidade de dano à saúde humana para configuração da conduta infracional.",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "Parágrafo único. As multas e demais penalidades de que trata o caput serão aplicadas após laudo técnico ou Relatório Técnico Ambiental elaborado por técnico do órgão ambiental competente, identificando a dimensão do dano decorrente da infração e em conformidade com a gradação do impacto, sendo suficiente a potencialidade de dano à saúde humana para configuração da conduta infracional. | Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      },
+      {
+        "resumo": "causar poluição tornando uma área, urbana ou rural, imprópria para ocupação humana",
+        "descricao_completa": "causar poluição tornando uma área, urbana ou rural, imprópria para ocupação humana",
+        "fundamento_legal": "Art. 79, I",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 1000,
+        "valor_maximo": 50000000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "§ 1º As multas de que tratam os incisos I a XI deste artigo serão aplicadas após laudo de constatação.",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "§ 1º As multas de que tratam os incisos I a XI deste artigo serão aplicadas após laudo de constatação. | Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      },
+      {
+        "resumo": "Causar poluição atmosférica",
+        "descricao_completa": "causar poluição atmosférica que provoque a retirada, ainda que momentânea, dos habitantes das áreas afetadas ou que provoque, de forma recorrente, significativo desconforto respiratório ou olfativo devidamente atestado pelo agente autuante",
+        "fundamento_legal": "Art. 79, II",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 1000,
+        "valor_maximo": 50000000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "§ 1º As multas de que tratam os incisos I a XI deste artigo serão aplicadas após laudo de constatação.",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "§ 1º As multas de que tratam os incisos I a XI deste artigo serão aplicadas após laudo de constatação. | Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      },
+      {
+        "resumo": "Causar poluição hídrica",
+        "descricao_completa": "causar poluição hídrica que torne necessária a interrupção do abastecimento público de água de uma comunidade",
+        "fundamento_legal": "Art. 79, III",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 1000,
+        "valor_maximo": 50000000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "§ 1º As multas de que tratam os incisos I a XI deste artigo serão aplicadas após laudo de constatação.",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "§ 1º As multas de que tratam os incisos I a XI deste artigo serão aplicadas após laudo de constatação. | Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      },
+      {
+        "resumo": "Causar poluição sonora",
+        "descricao_completa": "causar poluição sonora, em decorrência de quaisquer atividades industriais, comerciais, sociais ou recreativas, inclusive as de propaganda política, acima dos padrões ambientais estabelecidos",
+        "fundamento_legal": "Art. 79, IV",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 1000,
+        "valor_maximo": 50000000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "§ 1º As multas de que tratam os incisos I a XI deste artigo serão aplicadas após laudo de constatação.",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "§ 1º As multas de que tratam os incisos I a XI deste artigo serão aplicadas após laudo de constatação. | Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      },
+      {
+        "resumo": "Dificultar ou impedir o uso público das praias pelo lançamento de substâncias, efluentes, carreamento de materiais ou uso indevido dos recursos naturais",
+        "descricao_completa": "dificultar ou impedir o uso público das praias pelo lançamento de substâncias, efluentes, carreamento de materiais ou uso indevido dos recursos naturais",
+        "fundamento_legal": "Art. 79, V",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 1000,
+        "valor_maximo": 50000000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "§ 1º As multas de que tratam os incisos I a XI deste artigo serão aplicadas após laudo de constatação.",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "§ 1º As multas de que tratam os incisos I a XI deste artigo serão aplicadas após laudo de constatação. | Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      },
+      {
+        "resumo": "lançar resíduos sólidos, líquidos ou gasosos ou detritos, óleos ou substâncias oleosas",
+        "descricao_completa": "lançar resíduos sólidos, líquidos ou gasosos ou detritos, óleos ou substâncias oleosas em desacordo com as exigências estabelecidas em leis ou atos normativos",
+        "fundamento_legal": "Art. 79, VI",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 1000,
+        "valor_maximo": 50000000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "§ 1º As multas de que tratam os incisos I a XI deste artigo serão aplicadas após laudo de constatação.",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "§ 1º As multas de que tratam os incisos I a XI deste artigo serão aplicadas após laudo de constatação. | Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      },
+      {
+        "resumo": "Deixar de dar destinação ambientalmente adequada a produtos, subprodutos, embalagens, resíduos ou substância",
+        "descricao_completa": "deixar, aquele que tem obrigação, de dar destinação ambientalmente adequada a produtos, subprodutos, embalagens, resíduos ou substâncias quando assim determinar a lei ou ato normativo",
+        "fundamento_legal": "Art. 79, VII",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 1000,
+        "valor_maximo": 50000000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "§ 1º As multas de que tratam os incisos I a XI deste artigo serão aplicadas após laudo de constatação.",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "§ 1º As multas de que tratam os incisos I a XI deste artigo serão aplicadas após laudo de constatação. | Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      },
+      {
+        "resumo": "Deixar de adotar medidas de precaução ou contenção em caso de risco ou de dano ambiental grave ou irreversível",
+        "descricao_completa": "deixar de adotar, quando assim o exigir a autoridade competente, medidas de precaução ou contenção em caso de risco ou de dano ambiental grave ou irreversível",
+        "fundamento_legal": "Art. 79, VIII",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 1000,
+        "valor_maximo": 50000000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "§ 1º As multas de que tratam os incisos I a XI deste artigo serão aplicadas após laudo de constatação.",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "§ 1º As multas de que tratam os incisos I a XI deste artigo serão aplicadas após laudo de constatação. | Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      },
+      {
+        "resumo": "Provocar pela emissão de efluentes ou carreamento de materiais o perecimento de espécimes da biodiversidade",
+        "descricao_completa": "Provocar pela emissão de efluentes ou carreamento de materiais o perecimento de espécimes da biodiversidade",
+        "fundamento_legal": "Art. 79, IX",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 1000,
+        "valor_maximo": 50000000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "§ 1º As multas de que tratam os incisos I a XI deste artigo serão aplicadas após laudo de constatação.",
+        "observacao_2": "§ 5º Não estão compreendidas na infração do inciso IX as atividades de deslocamento de material do leito de corpos d’água por meio de dragagem, devidamente licenciado ou aprovado. § 6º As bacias de decantação de resíduos ou rejeitos industriais ou de mineração, devidamente licenciadas, não são consideradas corpos hídricos para efeitos do disposto no inciso IX.",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "§ 1º As multas de que tratam os incisos I a XI deste artigo serão aplicadas após laudo de constatação. | § 5º Não estão compreendidas na infração do inciso IX as atividades de deslocamento de material do leito de corpos d’água por meio de dragagem, devidamente licenciado ou aprovado. § 6º As bacias de decantação de resíduos ou rejeitos industriais ou de mineração, devidamente licenciadas, não são consideradas corpos hídricos para efeitos do disposto no inciso IX. | Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      },
+      {
+        "resumo": "Lançar resíduos sólidos ou rejeitos",
+        "descricao_completa": "lançar resíduos sólidos ou rejeitos em praias, no rio ou quaisquer recursos hídricos",
+        "fundamento_legal": "Art. 79, X",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 1000,
+        "valor_maximo": 50000000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "§ 1º As multas de que tratam os incisos I a XI deste artigo serão aplicadas após laudo de constatação.",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "§ 1º As multas de que tratam os incisos I a XI deste artigo serão aplicadas após laudo de constatação. | Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      },
+      {
+        "resumo": "Lançar resíduos sólidos ou rejeitos in natura a céu aberto",
+        "descricao_completa": "lançar resíduos sólidos ou rejeitos in natura a céu aberto, excetuados os resíduos de mineração",
+        "fundamento_legal": "Art. 79, XI",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 1000,
+        "valor_maximo": 50000000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "§ 1º As multas de que tratam os incisos I a XI deste artigo serão aplicadas após laudo de constatação.",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "§ 1º As multas de que tratam os incisos I a XI deste artigo serão aplicadas após laudo de constatação. | Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      },
+      {
+        "resumo": "Depositar resíduos sólidos ou rejeitos a céu aberto ou em recipientes, instalações e equipamentos não licenciados para a atividade",
+        "descricao_completa": "Depositar resíduos sólidos ou rejeitos a céu aberto ou em recipientes, instalações e equipamentos não licenciados para a atividade",
+        "fundamento_legal": "Art. 79, XII",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 1000,
+        "valor_maximo": 50000000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      },
+      {
+        "resumo": "Descumprir obrigação prevista no sistema de logística reversa",
+        "descricao_completa": "descumprir obrigação prevista no sistema de logística reversa implantado nos termos da Política Nacional de Resíduos Sólidos, consoante as responsabilidades específicas estabelecidas para o referido sistema e em acordo setorial de alcance nacional",
+        "fundamento_legal": "Art. 79, XIII",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 1000,
+        "valor_maximo": 50000000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      },
+      {
+        "resumo": "Deixar de segregar resíduos sólidos",
+        "descricao_completa": "deixar de segregar resíduos sólidos na forma estabelecida para a coleta seletiva, quando a referida coleta for instituída pelo titular do serviço público de limpeza urbana e manejo de resíduos sólidos",
+        "fundamento_legal": "Art. 79, XIV",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 1000,
+        "valor_maximo": 50000000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      },
+      {
+        "resumo": "Destinar resíduos sólidos urbanos à recuperação energética em desacordo com a Política Nacional de Resíduos Sólidos",
+        "descricao_completa": "Destinar resíduos sólidos urbanos à recuperação energética em desacordo com a Política Nacional de Resíduos Sólidos",
+        "fundamento_legal": "Art. 79, XV",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 1000,
+        "valor_maximo": 50000000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      },
+      {
+        "resumo": "Deixar de manter atualizadas e disponíveis informações completas sobre a realização das ações do sistema de logística reversa",
+        "descricao_completa": "deixar de manter atualizadas e disponíveis ao órgão municipal competente e a outras autoridades informações completas sobre a realização das ações do sistema de logística reversa sobre sua responsabilidade",
+        "fundamento_legal": "Art. 79, XVI",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 1000,
+        "valor_maximo": 50000000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      },
+      {
+        "resumo": "Não manter atualizadas e disponíveis informações completas sobre a implementação e a operacionalização do plano de gerenciamento de resíduos sólidos",
+        "descricao_completa": "não manter atualizadas e disponíveis ao órgão ambiental competente informações completas sobre a implementação e a operacionalização do plano de gerenciamento de resíduos sólidos sob sua responsabilidade",
+        "fundamento_legal": "Art. 79, XVII",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 1000,
+        "valor_maximo": 50000000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      },
+      {
+        "resumo": "Deixar de atender às regras sobre registro, gerenciamento e informação de resíduos perigosos",
+        "descricao_completa": "deixar de atender às regras sobre registro, gerenciamento e informação de resíduos perigosos",
+        "fundamento_legal": "Art. 79, XVIII",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 1000,
+        "valor_maximo": 50000000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      }
+    ]
+  },
+  {
+    "tipo_infracao": "MINERAÇÃO",
+    "infracoes": [
+      {
+        "resumo": "Executar pesquisa, lavra ou extração de minerais sem a competente autorização, permissão, concessão ou licença da Autoridade competente ou em desacordo com a obtida",
+        "descricao_completa": "Executar pesquisa, lavra ou extração de minerais sem a competente autorização, permissão, concessão ou licença da Autoridade competente ou em desacordo com a obtida. Parágrafo único. Incorre nas mesmas multas quem deixa de recuperar a área pesquisada ou explorada, nos termos da autorização, permissão, licença, concessão ou determinação do órgão ambiental competente.",
+        "fundamento_legal": "Art. 80",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 5000,
+        "valor_maximo": 50000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "por hectare ou fração.",
+        "observacao_2": "Parágrafo único. Incorre nas mesmas multas quem deixa de recuperar a área pesquisada ou explorada, nos termos da autorização, permissão, licença, concessão ou determinação do órgão ambiental competente.",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "por hectare ou fração. | Parágrafo único. Incorre nas mesmas multas quem deixa de recuperar a área pesquisada ou explorada, nos termos da autorização, permissão, licença, concessão ou determinação do órgão ambiental competente. | Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      }
+    ]
+  },
+  {
+    "tipo_infracao": "PRODUTOS/SUBSTÂNCIAS PERIGOSAS",
+    "infracoes": [
+      {
+        "resumo": "Produzir, processar, embalar, importar, exportar, comercializar, fornecer, transportar, armazenar, guardar, ter em depósito ou usar produto ou substância tóxica, perigosa ou nociva à saúde humana ou ao meio ambiente",
+        "descricao_completa": "Produzir, processar, embalar, importar, exportar, comercializar, fornecer, transportar, armazenar, guardar, ter em depósito ou usar produto ou substância tóxica, perigosa ou nociva à saúde humana ou ao meio ambiente, em desacordo com as exigências estabelecidas em leis ou em seus regulamentos. § 1º Incorre nas mesmas penas quem abandona os produtos ou substâncias referidas no caput, descarta de forma irregular ou os utiliza em desacordo com as normas de segurança",
+        "fundamento_legal": "Art. 81",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 500,
+        "valor_maximo": 2000000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "§ 1º Incorre nas mesmas penas quem abandona os produtos ou substâncias referidas no caput, descarta de forma irregular ou os utiliza em desacordo com as normas de segurança. § 2º Se o produto ou a substância for nuclear ou radioativa, a multa é aumentada ao quíntuplo.",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "§ 1º Incorre nas mesmas penas quem abandona os produtos ou substâncias referidas no caput, descarta de forma irregular ou os utiliza em desacordo com as normas de segurança. § 2º Se o produto ou a substância for nuclear ou radioativa, a multa é aumentada ao quíntuplo. | Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      }
+    ]
+  },
+  {
+    "tipo_infracao": "ATIVIDADE SEM LICENÇA",
+    "infracoes": [
+      {
+        "resumo": "ATIVIDADE SEM LICENÇA/DESCUMPRIMENTO DE CONDICIONANTES",
+        "descricao_completa": "Construir, reformar, ampliar, instalar ou fazer funcionar estabelecimentos, atividades, obras ou serviços utilizadores de recursos ambientais, considerados efetiva ou potencialmente poluidores, sem licença ou autorização dos órgãos ambientais competentes, em desacordo com a licença obtida ou contrariando as normas legais e regulamentos pertinentes",
+        "fundamento_legal": "Art. 82",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 500,
+        "valor_maximo": 10000000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      },
+      {
+        "resumo": "Construir, reformar, amplira, instalar ou faerz funcionar estabelecimento, obra ou serviço sujeito a licenciamento ambiental localizado em unidade de conservação ou em sua zona de amortecimento, ou em áreas de proteção de mananciais legalmente estabelecidas, sem anuência do respectivo órgão gestor",
+        "descricao_completa": "Construir, reformar, amplira, instalar ou faerz funcionar estabelecimento, obra ou serviço sujeito a licenciamento ambiental localizado em unidade de conservação ou em sua zona de amortecimento, ou em áreas de proteção de mananciais legalmente estabelecidas, sem anuência do respectivo órgão gestor",
+        "fundamento_legal": "Art. 82, I",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 500,
+        "valor_maximo": 10000000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      }
+    ]
+  },
+  {
+    "tipo_infracao": "DESCUMPRIMENTO DE CONDICIONANTES",
+    "infracoes": [
+      {
+        "resumo": "Descumprimento de condicionantes",
+        "descricao_completa": "deixa de atender as condicionantes estabelecidas na licença ambiental.",
+        "fundamento_legal": "Art. 82, II",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 500,
+        "valor_maximo": 10000000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "Art. 15, § 2º Quando se tratar de infração decorrente de descumprimento exclusivo de condição prevista na licença ambiental, a valoração será realizada para cada condicionante violada.",
+        "observacao_2": "Art. 15, § 3º Na hipótese de infrações administrativas e condicionante da licença ambiental de natureza formal, as consequências para o meio ambiente e para a saúde pública serão classificadas como potenciais e não caracterizadas, respectivamente.",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "Art. 15, § 2º Quando se tratar de infração decorrente de descumprimento exclusivo de condição prevista na licença ambiental, a valoração será realizada para cada condicionante violada. | Art. 15, § 3º Na hipótese de infrações administrativas e condicionante da licença ambiental de natureza formal, as consequências para o meio ambiente e para a saúde pública serão classificadas como potenciais e não caracterizadas, respectivamente. | Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      }
+    ]
+  },
+  {
+    "tipo_infracao": "DISCEMINAÇÃO DE DOENÇA/PRAGA/ESPÉCIES DANOSAS",
+    "infracoes": [
+      {
+        "resumo": "Disseminar doença ou praga ou espécies que possam causar dano à fauna, à flora ou aos ecossistemas",
+        "descricao_completa": "Disseminar doença ou praga ou espécies que possam causar dano à fauna, à flora ou aos ecossistemas",
+        "fundamento_legal": "Art. 83",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 5000,
+        "valor_maximo": 5000000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      }
+    ]
+  },
+  {
+    "tipo_infracao": "VEÍCULOS - CONDUÇÃO EM DESACORDO",
+    "infracoes": [
+      {
+        "resumo": "Conduzir, permitir ou autorizar a condução de veículo automotor em desacordo com os limites e exigências ambientais previstos na legislação",
+        "descricao_completa": "Conduzir, permitir ou autorizar a condução de veículo automotor em desacordo com os limites e exigências ambientais previstos na legislação",
+        "fundamento_legal": "Art. 84",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 1000,
+        "valor_maximo": 10000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      },
+      {
+        "resumo": "Alterar ou promover a conversão de qualquer item em veículos ou motores novos ou usados que provoque alterações nos limites e exigências ambientais previstas na legislação",
+        "descricao_completa": "Alterar ou promover a conversão de qualquer item em veículos ou motores novos ou usados que provoque alterações nos limites e exigências ambientais previstas na legislação",
+        "fundamento_legal": "Art. 85",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 500,
+        "valor_maximo": 10000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "por veículo, e correção da irregularidade.",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "por veículo, e correção da irregularidade. | Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      }
+    ]
+  },
+  {
+    "tipo_infracao": "DAS INFRAÇÕES CONTRA O ORDENAMENTO URBANO E O PATRIMÔNIO CULTURAL",
+    "infracoes": [
+      {
+        "resumo": "Destruir, inutilizar ou deteriorar bem especialmente protegido por lei, ato administrativo ou decisão judicial.",
+        "descricao_completa": "Destruir, inutilizar ou deteriorar bem especialmente protegido por lei, ato administrativo ou decisão judicial.",
+        "fundamento_legal": "Art. 86, I",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 10000,
+        "valor_maximo": 500000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      },
+      {
+        "resumo": "Destruir, inutilizar ou deteriorar arquivo, registro, museu, biblioteca, pinacoteca, instalação científica ou similar protegido por lei, ato administrativo ou decisão judicial",
+        "descricao_completa": "Destruir, inutilizar ou deteriorar arquivo, registro, museu, biblioteca, pinacoteca, instalação científica ou similar protegido por lei, ato administrativo ou decisão judicial",
+        "fundamento_legal": "Art. 86, II",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 10000,
+        "valor_maximo": 500000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      },
+      {
+        "resumo": "Alterar o aspecto ou estrutura de edificação ou local especialmente protegido por lei",
+        "descricao_completa": "Alterar o aspecto ou estrutura de edificação ou local especialmente protegido por lei, ato administrativo ou decisão judicial, em razão de seu valor paisagístico, ecológico, turístico, artístico, histórico, cultural, religioso, arqueológico, etnográfico ou monumental, sem autorização da autoridade competente ou em desacordo com a concedida",
+        "fundamento_legal": "Art. 87",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 10000,
+        "valor_maximo": 200000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      },
+      {
+        "resumo": "Promover construção em solo não edificável, ou no seu entorno, assim considerado em razão de seu valor paisagístico, ecológico, artístico, turístico, histórico, cultural, religioso, arqueológico, etnográfico ou monumental, sem autorização da autoridade competente ou em desacordo com a concedida",
+        "descricao_completa": "Promover construção em solo não edificável, ou no seu entorno, assim considerado em razão de seu valor paisagístico, ecológico, artístico, turístico, histórico, cultural, religioso, arqueológico, etnográfico ou monumental, sem autorização da autoridade competente ou em desacordo com a concedida",
+        "fundamento_legal": "Art. 88",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 10000,
+        "valor_maximo": 100000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      },
+      {
+        "resumo": "Pichar, grafitar ou por outro meio conspurcar edificação alheia ou monumento urbano",
+        "descricao_completa": "Pichar, grafitar ou por outro meio conspurcar edificação alheia ou monumento urbano",
+        "fundamento_legal": "Art. 89",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 1000,
+        "valor_maximo": 50000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "Parágrafo único. Se o ato for realizado em monumento ou coisa tombada, a multa é aplicada em dobro.",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "Parágrafo único. Se o ato for realizado em monumento ou coisa tombada, a multa é aplicada em dobro. | Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      }
+    ]
+  },
+  {
+    "tipo_infracao": "DAS INFRAÇÕES ADMINISTRATIVAS CONTRA A ADMINISTRAÇÃO AMBIENTAL",
+    "infracoes": [
+      {
+        "resumo": "Obstar ou dificultar a ação do Poder Público no exercício de atividades de fiscalização ambiental",
+        "descricao_completa": "Obstar ou dificultar a ação do Poder Público no exercício de atividades de fiscalização ambiental",
+        "fundamento_legal": "Art. 90",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 500,
+        "valor_maximo": 100000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      },
+      {
+        "resumo": "Obstar ou dificultar a ação do órgão ambiental",
+        "descricao_completa": "Obstar ou dificultar a ação do órgão ambiental, ou de terceiro por ele encarregado, na coleta de dados para a execução de georreferenciamento de imóveis rurais para fins de fiscalização",
+        "fundamento_legal": "Art. 91",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 100,
+        "valor_maximo": 300,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "por hectare do imóvel.",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "por hectare do imóvel. | Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      },
+      {
+        "resumo": "Descumprir embargo de obra ou atividade",
+        "descricao_completa": "Descumprir embargo de obra ou atividade e suas respectivas áreas",
+        "fundamento_legal": "Art. 92",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 10000,
+        "valor_maximo": 10000000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      },
+      {
+        "resumo": "Deixar de atender a exigências legais ou regulamentares",
+        "descricao_completa": "Deixar de atender a exigências legais ou regulamentares quando devidamente notificado pela Autoridade competente no prazo concedido, visando à regularização, correção ou adoção de medidas de controle para cessar a degradação ambiental",
+        "fundamento_legal": "Art. 93",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 1000,
+        "valor_maximo": 1000000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      },
+      {
+        "resumo": "Deixar de apresentar relatórios ou informações ambientais nos prazos exigidos pela legislação",
+        "descricao_completa": "Deixar de apresentar relatórios ou informações ambientais nos prazos exigidos pela legislação ou, quando aplicável, naquele determinado pela Autoridade Ambiental",
+        "fundamento_legal": "Art. 94",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 1000,
+        "valor_maximo": 1000000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      },
+      {
+        "resumo": "Elaborar ou apresentar informação, estudo, laudo ou relatório ambiental total ou parcialmente falso, enganoso ou omisso",
+        "descricao_completa": "Elaborar ou apresentar informação, estudo, laudo ou relatório ambiental total ou parcialmente falso, enganoso ou omisso, seja nos sistemas oficiais de controle, seja no licenciamento, na concessão florestal ou em qualquer outro procedimento administrativo ambiental",
+        "fundamento_legal": "Art. 95",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 1500,
+        "valor_maximo": 1000000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      },
+      {
+        "resumo": "Deixar de cumprir compensação ambiental determinada por lei",
+        "descricao_completa": "Deixar de cumprir compensação ambiental determinada por lei, na forma e no prazo exigidos pela Autoridade Ambiental",
+        "fundamento_legal": "Art. 96",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 10000,
+        "valor_maximo": 1000000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      },
+      {
+        "resumo": "Comprar, vender, intermediar, utilizar, produzir, armazenar, transportar, importar, exportar, financiar e fomentar produto, substância ou espécie animal ou vegetal sem autorização, licença ou permissão ambiental válida ou em desacordo com aquela concedida",
+        "descricao_completa": "Comprar, vender, intermediar, utilizar, produzir, armazenar, transportar, importar, exportar, financiar e fomentar produto, substância ou espécie animal ou vegetal sem autorização, licença ou permissão ambiental válida ou em desacordo com aquela concedida",
+        "fundamento_legal": "Art. 97",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 100,
+        "valor_maximo": 1000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "por quilograma, hectare ou unidade de medida compatível com a mensuração do objeto da infração.",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "por quilograma, hectare ou unidade de medida compatível com a mensuração do objeto da infração. | Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      },
+      {
+        "resumo": "Deixar de reparar, compensar ou indenizar dano ambiental",
+        "descricao_completa": "Deixar de reparar, compensar ou indenizar dano ambiental, na forma e no prazo exigidos pela autoridade competente, ou implementar prestação em desacordo com a definida",
+        "fundamento_legal": "Art. 98",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 10000,
+        "valor_maximo": 50000000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      }
+    ]
+  },
+  {
+    "tipo_infracao": "DAS INFRAÇÕES COMETIDAS EXCLUSIVAMENTE EM UNIDADES DE CONSERVAÇÃO",
+    "infracoes": [
+      {
+        "resumo": "Introduzir em unidade de conservação do Estado espécies alóctones",
+        "descricao_completa": "Introduzir em unidade de conservação do Estado espécies alóctones",
+        "fundamento_legal": "Art. 99",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 2000,
+        "valor_maximo": 100000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "§ 1º Excetuam-se do disposto neste artigo as áreas de proteção ambiental, as florestas estaduais, as reservas extrativistas e as reservas de desenvolvimento sustentável, bem como os animais e plantas necessários à administração e às atividades das demais categorias de unidades de conservação, de acordo com o que se dispuser em regulamento e no plano de manejo da unidade. § 2º Nas áreas particulares localizadas em refúgios de vida silvestre, monumentos naturais e reservas particulares do patrimônio natural podem ser criados animais domésticos e cultivadas plantas considerados compatíveis com as finalidades da unidade, de acordo com o que dispuser o seu plano de manejo.",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "§ 1º Excetuam-se do disposto neste artigo as áreas de proteção ambiental, as florestas estaduais, as reservas extrativistas e as reservas de desenvolvimento sustentável, bem como os animais e plantas necessários à administração e às atividades das demais categorias de unidades de conservação, de acordo com o que se dispuser em regulamento e no plano de manejo da unidade. § 2º Nas áreas particulares localizadas em refúgios de vida silvestre, monumentos naturais e reservas particulares do patrimônio natural podem ser criados animais domésticos e cultivadas plantas considerados compatíveis com as finalidades da unidade, de acordo com o que dispuser o seu plano de manejo. | Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      },
+      {
+        "resumo": "Violar as limitações administrativas provisórias impostas às atividades efetiva ou potencialmente causadoras de degradação ambiental nas áreas delimitadas para realização de estudos com vistas à criação de unidade de conservação",
+        "descricao_completa": "Violar as limitações administrativas provisórias impostas às atividades efetiva ou potencialmente causadoras de degradação ambiental nas áreas delimitadas para realização de estudos com vistas à criação de unidade de conservação",
+        "fundamento_legal": "Art. 100",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 1500,
+        "valor_maximo": 1000000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "Parágrafo único. Incorre nas mesmas multas quem explora a corte raso a floresta ou outras formas de vegetação nativa nas áreas definidas no caput.",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "Parágrafo único. Incorre nas mesmas multas quem explora a corte raso a floresta ou outras formas de vegetação nativa nas áreas definidas no caput. | Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      },
+      {
+        "resumo": "Realizar pesquisa científica, envolvendo ou não coleta de material biológico, em unidade de conservação estadual sem a devida autorização, quando esta for exigível",
+        "descricao_completa": "Realizar pesquisa científica, envolvendo ou não coleta de material biológico, em unidade de conservação estadual sem a devida autorização, quando esta for exigível",
+        "fundamento_legal": "Art. 101",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 500,
+        "valor_maximo": 10000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "§ 1º A multa será aplicada em dobro caso as atividades de pesquisa coloquem em risco demográfico as espécies integrantes dos ecossistemas protegidos. § 2º Excetuam-se do disposto neste artigo as áreas de proteção ambiental e reservas particulares do patrimônio natural, quando as atividades de pesquisa científica não envolverem a coleta de material biológico.",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "§ 1º A multa será aplicada em dobro caso as atividades de pesquisa coloquem em risco demográfico as espécies integrantes dos ecossistemas protegidos. § 2º Excetuam-se do disposto neste artigo as áreas de proteção ambiental e reservas particulares do patrimônio natural, quando as atividades de pesquisa científica não envolverem a coleta de material biológico. | Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      },
+      {
+        "resumo": "Explorar ou fazer uso comercial de imagem de unidade de conservação sem autorização do órgão gestor da unidade ou em desacordo com a recebida",
+        "descricao_completa": "Explorar ou fazer uso comercial de imagem de unidade de conservação sem autorização do órgão gestor da unidade ou em desacordo com a recebida. Parágrafo único. Excetuam-se do disposto neste artigo as áreas \nde proteção ambiental e reservas particulares do patrimônio natural.",
+        "fundamento_legal": "Art. 102",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 5000,
+        "valor_maximo": 2000000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "Parágrafo único. Excetuam-se do disposto neste artigo as áreas de proteção ambiental e reservas particulares do patrimônio natural.",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "Parágrafo único. Excetuam-se do disposto neste artigo as áreas de proteção ambiental e reservas particulares do patrimônio natural. | Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      },
+      {
+        "resumo": "Realizar liberação planejada ou cultivo de organismos geneticamente modificados em áreas de proteção ambiental do Estado, ou zonas de amortecimento das demais categorias de unidades de conservação, em desacordo com o estabelecido em seus respectivos planos de manejo, regulamentos ou recomendações da Comissão Técnica Nacional de Biossegurança – CTNBio",
+        "descricao_completa": "Realizar liberação planejada ou cultivo de organismos geneticamente modificados em áreas de proteção ambiental do Estado, ou zonas de amortecimento das demais categorias de unidades de conservação, em desacordo com o estabelecido em seus respectivos planos de manejo, regulamentos ou recomendações da Comissão Técnica Nacional de Biossegurança – CTNBio",
+        "fundamento_legal": "Art. 103",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 1500,
+        "valor_maximo": 1000000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "§ 1º A multa será aumentada ao triplo se o ato ocorrer no interior de unidade de conservação de proteção integral. § 2º A multa será aumentada ao quádruplo se o organismo geneticamente modificado, liberado ou cultivado irregularmente em unidade de conservação possuir na área ancestral direto ou parente silvestre ou se representar risco à biodiversidade. § 3º O Poder Executivo estabelecerá os limites para o plantio de organismos geneticamente modificados nas áreas que circundam as unidades de conservação até que seja fixada sua zona de amortecimento e aprovado o seu respectivo plano de manejo.",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "§ 1º A multa será aumentada ao triplo se o ato ocorrer no interior de unidade de conservação de proteção integral. § 2º A multa será aumentada ao quádruplo se o organismo geneticamente modificado, liberado ou cultivado irregularmente em unidade de conservação possuir na área ancestral direto ou parente silvestre ou se representar risco à biodiversidade. § 3º O Poder Executivo estabelecerá os limites para o plantio de organismos geneticamente modificados nas áreas que circundam as unidades de conservação até que seja fixada sua zona de amortecimento e aprovado o seu respectivo plano de manejo. | Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      },
+      {
+        "resumo": "Realizar quaisquer atividades ou adotar conduta em desacordo com os objetivos da unidade de conservação, o seu plano de manejo e regulamentos",
+        "descricao_completa": "Realizar quaisquer atividades ou adotar conduta em desacordo com os objetivos da unidade de conservação, o seu plano de manejo e regulamentos",
+        "fundamento_legal": "Art. 104",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 500,
+        "valor_maximo": 10000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      },
+      {
+        "resumo": "Causar dano à unidade de conservação",
+        "descricao_completa": "Causar dano à unidade de conservação",
+        "fundamento_legal": "Art. 105",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 200,
+        "valor_maximo": 100000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      },
+      {
+        "resumo": "Penetrar em unidade de conservação conduzindo substâncias ou instrumentos próprios para caça, pesca ou para exploração de produtos ou subprodutos florestais e minerais, sem licença da autoridade competente, quando esta for exigível",
+        "descricao_completa": "Penetrar em unidade de conservação conduzindo substâncias ou instrumentos próprios para caça, pesca ou para exploração de produtos ou subprodutos florestais e minerais, sem licença da autoridade competente, quando esta for exigível",
+        "fundamento_legal": "Art. 106",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 1000,
+        "valor_maximo": 10000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      },
+      {
+        "resumo": "penetrar em unidade de conservação cuja visitação pública ou permanência sejam vedadas pelas normas aplicáveis ou ocorram em desacordo com a licença da autoridade competente",
+        "descricao_completa": "penetrar em unidade de conservação cuja visitação pública ou permanência sejam vedadas pelas normas aplicáveis ou ocorram em desacordo com a licença da autoridade competente",
+        "fundamento_legal": "Art. 106 PARÁGRAFO ÚNICO",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 1000,
+        "valor_maximo": 10000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      }
+    ]
+  },
+  {
+    "tipo_infracao": "DAS INFRAÇÕES COMETIDAS CONTRA AS NORMAS DE GESTÃO E UTILIZAÇÃO DE RECURSOS HÍDRICOS",
+    "infracoes": [
+      {
+        "resumo": "Derivar ou utilizar recursos hídricos para qualquer finalidade, sem a respectiva outorga de direito de uso",
+        "descricao_completa": "Derivar ou utilizar recursos hídricos para qualquer finalidade, sem a respectiva outorga de direito de uso",
+        "fundamento_legal": "Art. 108",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 1000,
+        "valor_maximo": 10000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      },
+      {
+        "resumo": "Iniciar a implantação ou implantar empreendimento relacionado com a derivação ou a utilização de recursos hídricos, superficiais ou subterrâneos, que implique alterações no regime, quantidade ou qualidade dos mesmos, sem autorização dos órgãos ou entidades competentes",
+        "descricao_completa": "Iniciar a implantação ou implantar empreendimento relacionado com a derivação ou a utilização de recursos hídricos, superficiais ou subterrâneos, que implique alterações no regime, quantidade ou qualidade dos mesmos, sem autorização dos órgãos ou entidades competentes",
+        "fundamento_legal": "Art. 109",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 5000,
+        "valor_maximo": 50000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      },
+      {
+        "resumo": "Utilizar-se dos recursos hídricos ou executar obras ou serviços relacionados com os mesmos em desacordo com as condições estabelecidas na outorga",
+        "descricao_completa": "Utilizar-se dos recursos hídricos ou executar obras ou serviços relacionados com os mesmos em desacordo com as condições estabelecidas na outorga",
+        "fundamento_legal": "Art. 110",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 5000,
+        "valor_maximo": 50000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      },
+      {
+        "resumo": "Perfurar poços para extração de água subterrânea ou operá-los sem a devida autorização",
+        "descricao_completa": "Perfurar poços para extração de água subterrânea ou operá-los sem a devida autorização",
+        "fundamento_legal": "Art. 111",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 2000,
+        "valor_maximo": 20000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      },
+      {
+        "resumo": "Fraudar as medições dos volumes de água utilizados ou declarar valores diferentes dos medidos",
+        "descricao_completa": "Fraudar as medições dos volumes de água utilizados ou declarar valores diferentes dos medidos",
+        "fundamento_legal": "Art. 112",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 2000,
+        "valor_maximo": 20000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      },
+      {
+        "resumo": "Infringir normas estabelecidas em Lei, Decretos e regulamentos administrativos, compreendendo instruções e procedimentos fixados pelos órgãos ou entidades competentes",
+        "descricao_completa": "Infringir normas estabelecidas em Lei, Decretos e regulamentos administrativos, compreendendo instruções e procedimentos fixados pelos órgãos ou entidades competentes",
+        "fundamento_legal": "Art. 113",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 2000,
+        "valor_maximo": 20000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      },
+      {
+        "resumo": "Obstar ou dificultar a ação fiscalizadora das autoridades competentes, no exercício de suas funções",
+        "descricao_completa": "Obstar ou dificultar a ação fiscalizadora das autoridades competentes, no exercício de suas funções",
+        "fundamento_legal": "Art. 114",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 2000,
+        "valor_maximo": 20000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      },
+      {
+        "resumo": "Continuar a utilizar o recurso hídrico após o término do prazo estabelecido na outorga sem a prorrogação ou revalidação desta",
+        "descricao_completa": "Continuar a utilizar o recurso hídrico após o término do prazo estabelecido na outorga sem a prorrogação ou revalidação desta",
+        "fundamento_legal": "Art. 115",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 5000,
+        "valor_maximo": 50000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      },
+      {
+        "resumo": "Poluir ou degradar recursos hídricos, acima dos limites estabelecidos na legislação ambiental pertinente",
+        "descricao_completa": "Poluir ou degradar recursos hídricos, acima dos limites estabelecidos na legislação ambiental pertinente",
+        "fundamento_legal": "Art. 116",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 1000,
+        "valor_maximo": 50000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      },
+      {
+        "resumo": "Degradar ou impedir a regeneração de florestas e demais formas de vegetação permanente, adjacentes aos recursos hídricos, definidas no Código Florestal",
+        "descricao_completa": "Degradar ou impedir a regeneração de florestas e demais formas de vegetação permanente, adjacentes aos recursos hídricos, definidas no Código Florestal",
+        "fundamento_legal": "Art. 117",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 1000,
+        "valor_maximo": 50000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      },
+      {
+        "resumo": "Utilizar recurso hídrico de maneira prejudicial a direito de terceiros e à vazão mínima remanescente estabelecida",
+        "descricao_completa": "Utilizar recurso hídrico de maneira prejudicial a direito de terceiros e à vazão mínima remanescente estabelecida",
+        "fundamento_legal": "Art. 118",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 1000,
+        "valor_maximo": 10000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      },
+      {
+        "resumo": "Descumprir determinações normativas ou atos emanados das autoridades competentes visando a aplicação deste Decreto",
+        "descricao_completa": "Descumprir determinações normativas ou atos emanados das autoridades competentes visando a aplicação deste Decreto",
+        "fundamento_legal": "Art. 119",
+        "natureza_multa": "ABERTA",
+        "valor_minimo": 5000,
+        "valor_maximo": 50000,
+        "valor_por_unidade": null,
+        "unidade_de_medida": null,
+        "criterios_aplicacao": "",
+        "observacao_1": "Parágrafo único. Sempre que da infração previstas neste artigo resultar prejuízo a serviço público de abastecimento de água, riscos à saúde ou à vida, perecimento de bens ou animais, ou prejuízos de qualquer natureza a terceiros, a multa a ser aplicada nunca será inferior à metade do valor máximo cominado em abstrato.",
+        "observacao_2": "",
+        "observacao_3": "",
+        "observacao_4": "Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "observacoes": "Parágrafo único. Sempre que da infração previstas neste artigo resultar prejuízo a serviço público de abastecimento de água, riscos à saúde ou à vida, perecimento de bens ou animais, ou prejuízos de qualquer natureza a terceiros, a multa a ser aplicada nunca será inferior à metade do valor máximo cominado em abstrato. | Art. 107. As infrações previstas neste Decreto, quando afetarem ou forem cometidas em unidade de conservação ou em sua zona de amortecimento, terão os valores de suas respectivas multas aplicados em dobro, ressalvados os casos em que a determinação de aumento do valor da multa seja superior a este ou as hipóteses em que a unidade de conservação configure elementar do tipo.",
+        "duplicidade": false,
+        "tipos_relacionados": [],
+        "valor_fixo": "-",
+        "fixo": "-"
+      }
+    ]
+  }
+]
+
+export const infracoesData: InfracaoBloco[] = rawData.map((bloco) => ({
+  ...bloco,
+  infracoes: bloco.infracoes.map((inf) => ({
+    ...inf,
+    _categoria: bloco.tipo_infracao,
+    _tipo_multa_computado: detectTipoMulta(inf),
+  })),
+}))
