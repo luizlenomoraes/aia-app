@@ -22,8 +22,9 @@ import {
   CheckCircle,
   FileText,
   X,
+  Gavel,
 } from "lucide-react"
-import { regrasPercentuais, categoriasLabels, agravantesOptions, atenuantesOptions } from "@/lib/multa-data"
+import { regrasPercentuais, categoriasLabels, agravantesOptions, atenuantesOptions, sancoesOptions } from "@/lib/multa-data"
 import { formatCurrency, parseCurrency, formatCurrencyInput } from "@/lib/utils"
 import type { Infracao } from "@/lib/infracoes-data"
 
@@ -38,6 +39,9 @@ interface CalculadoraTabProps {
 }
 
 export function CalculadoraTab({ selectedInfracao, onClearSelection }: CalculadoraTabProps) {
+  // Step 0: Sanções
+  const [sancoes, setSancoes] = useState<string[]>([])
+
   // Step 1: Gravidade
   const [voluntariedade, setVoluntariedade] = useState("")
   const [meioAmbiente, setMeioAmbiente] = useState("")
@@ -63,6 +67,7 @@ export function CalculadoraTab({ selectedInfracao, onClearSelection }: Calculado
 
   // Collapsible states
   const [openSections, setOpenSections] = useState({
+    sancoes: true,
     gravidade: true,
     tipo: false,
     categoria: false,
@@ -72,15 +77,12 @@ export function CalculadoraTab({ selectedInfracao, onClearSelection }: Calculado
 
   useEffect(() => {
     if (selectedInfracao) {
-      // Auto-fill valor mínimo
       if (selectedInfracao.valor_minimo) {
         setValorMinimo(formatCurrency(selectedInfracao.valor_minimo))
       }
-      // Auto-fill valor máximo as reference for aberta multas
       if (selectedInfracao._tipo_multa_computado === "aberta" && selectedInfracao.valor_maximo) {
         setValorReferencia(formatCurrency(selectedInfracao.valor_maximo))
       }
-      // Open the categoria section to show the values
       setOpenSections((prev) => ({ ...prev, categoria: true }))
     }
   }, [selectedInfracao])
@@ -165,6 +167,8 @@ export function CalculadoraTab({ selectedInfracao, onClearSelection }: Calculado
     const percentualLiquido = agravantesPercentual - atenuantesTotal
     const valorFinal = multaBase * (1 + percentualLiquido / 100)
 
+    const sancoesSelecionadas = sancoes.map(id => sancoesOptions.find(s => s.id === id)?.label).filter(Boolean)
+
     setResultado({
       nivel: nivelGravidade,
       pontuacao,
@@ -183,10 +187,12 @@ export function CalculadoraTab({ selectedInfracao, onClearSelection }: Calculado
       atenuantesTotal,
       percentualLiquido,
       valorFinal,
+      sancoes: sancoesSelecionadas,
     })
   }
 
   const handleLimpar = () => {
+    setSancoes([])
     setVoluntariedade("")
     setMeioAmbiente("")
     setSaudePublica("")
@@ -199,6 +205,7 @@ export function CalculadoraTab({ selectedInfracao, onClearSelection }: Calculado
     setAtenuantes({})
     setResultado(null)
     setOpenSections({
+      sancoes: true,
       gravidade: true,
       tipo: false,
       categoria: false,
@@ -243,6 +250,55 @@ export function CalculadoraTab({ selectedInfracao, onClearSelection }: Calculado
           </CardContent>
         </Card>
       )}
+
+      {/* Step 0: Sanções */}
+      <Collapsible open={openSections.sancoes} onOpenChange={() => toggleSection("sancoes")}>
+        <Card>
+          <CollapsibleTrigger asChild>
+            <CardHeader className="cursor-pointer active:bg-muted/50 transition-colors">
+              <CardTitle className="flex items-center justify-between text-base">
+                <span className="flex items-center gap-2">
+                  <span className="w-6 h-6 rounded-full bg-secondary text-secondary-foreground text-xs flex items-center justify-center">
+                    0
+                  </span>
+                  Sanções Administrativas
+                </span>
+                <div className="flex items-center gap-2">
+                   {sancoes.length > 0 && (
+                    <span className="bg-primary/10 text-primary text-xs px-2 py-0.5 rounded-full">
+                      {sancoes.length}
+                    </span>
+                  )}
+                  <ChevronDown className={`w-5 h-5 transition-transform ${openSections.sancoes ? "rotate-180" : ""}`} />
+                </div>
+              </CardTitle>
+            </CardHeader>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <CardContent className="space-y-2 max-h-60 overflow-y-auto">
+              {sancoesOptions.map((option) => (
+                <label
+                  key={option.id}
+                  className="flex items-start gap-3 p-3 rounded-lg border cursor-pointer hover:bg-muted/50 active:bg-muted transition-colors"
+                >
+                  <Checkbox
+                    checked={sancoes.includes(option.id)}
+                    onCheckedChange={(checked) => {
+                      if (checked) {
+                        setSancoes((prev) => [...prev, option.id])
+                      } else {
+                        setSancoes((prev) => prev.filter((id) => id !== option.id))
+                      }
+                    }}
+                    className="mt-0.5"
+                  />
+                  <span className="text-sm">{option.label}</span>
+                </label>
+              ))}
+            </CardContent>
+          </CollapsibleContent>
+        </Card>
+      </Collapsible>
 
       {/* Step 1: Gravidade */}
       <Collapsible open={openSections.gravidade} onOpenChange={() => toggleSection("gravidade")}>
@@ -624,6 +680,22 @@ export function CalculadoraTab({ selectedInfracao, onClearSelection }: Calculado
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
+             <div className="bg-muted/50 rounded-lg p-3 space-y-2">
+              <h4 className="font-medium text-sm flex items-center gap-2">
+                <Gavel className="w-4 h-4 text-primary" />
+                Sanções Aplicadas
+              </h4>
+              {resultado.sancoes && resultado.sancoes.length > 0 ? (
+                <ul className="list-disc list-inside text-xs space-y-1">
+                  {resultado.sancoes.map((s: string, i: number) => (
+                    <li key={i}>{s}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-xs text-muted-foreground">Nenhuma sanção selecionada</p>
+              )}
+            </div>
+
             <div className="bg-muted/50 rounded-lg p-3 space-y-2">
               <h4 className="font-medium text-sm flex items-center gap-2">
                 <AlertTriangle className="w-4 h-4 text-primary" />

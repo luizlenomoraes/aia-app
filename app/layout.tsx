@@ -1,46 +1,47 @@
-import type React from "react"
-import type { Metadata, Viewport } from "next"
-import { Geist, Geist_Mono } from "next/font/google"
-import "./globals.css"
+import type { Metadata } from "next";
+import { Inter } from "next/font/google"; 
+import "./globals.css";
+import { ThemeProvider } from "@/components/theme-provider";
+import { UpdatePrompt } from "@/components/update-prompt";
 
-const _geist = Geist({ subsets: ["latin"] })
-const _geistMono = Geist_Mono({ subsets: ["latin"] })
+const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "SEMA/AP — AIA Eletrônico",
-  description: "Calculadora de Multas Ambientais - Sistema de Auto de Infração Ambiental do Amapá",
+  title: "AIA Ambiental",
+  description: "Aplicativo de Auto de Infração Ambiental - SEMA/AP",
   manifest: "/manifest.json",
-  appleWebApp: {
-    capable: true,
-    statusBarStyle: "default",
-    title: "AIA SEMA/AP",
-  },
-  icons: {
-    icon: "/logo-sema-ap.png",
-    apple: "/logo-sema-ap.png",
-  },
-  generator: "v0.app",
-}
+    generator: 'v0.app'
+};
 
-export const viewport: Viewport = {
+export const viewport = {
+  themeColor: "#2a9d8f",
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
-  themeColor: "#2a9d8f",
-}
+};
 
 export default function RootLayout({
   children,
 }: Readonly<{
-  children: React.ReactNode
+  children: React.ReactNode;
 }>) {
   return (
-    <html lang="pt-BR">
+    <html lang="pt-BR" suppressHydrationWarning>
       <head>
-        <link rel="apple-touch-icon" href="/logo-sema-ap.png" />
+        <link rel="icon" href="/favicon.ico" sizes="any" />
       </head>
-      <body className="font-sans antialiased touch-manipulation">{children}</body>
+      <body className={inter.className}>
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="system"
+          enableSystem
+          disableTransitionOnChange
+        >
+          {children}
+          <UpdatePrompt />
+        </ThemeProvider>
+      </body>
     </html>
-  )
+  );
 }

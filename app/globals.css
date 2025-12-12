@@ -1,134 +1,81 @@
-@import "tailwindcss";
-@import "tw-animate-css";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-@custom-variant dark (&:is(.dark *));
+@layer base {
+  :root {
+    /* Cores extraídas do seu HTML original */
+    --background: 150 15% 97%;   /* Fundo levemente esverdeado (#f5f7f4) */
+    --foreground: 200 50% 20%;   /* Texto escuro (#1f2a1e) */
 
-:root {
-  --background: oklch(0.98 0.005 145);
-  --foreground: oklch(0.25 0.03 200);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.25 0.03 200);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.25 0.03 200);
-  --primary: oklch(0.55 0.12 170);
-  --primary-foreground: oklch(1 0 0);
-  --secondary: oklch(0.95 0.01 170);
-  --secondary-foreground: oklch(0.35 0.05 200);
-  --muted: oklch(0.95 0.01 170);
-  --muted-foreground: oklch(0.5 0.03 200);
-  --accent: oklch(0.95 0.02 170);
-  --accent-foreground: oklch(0.35 0.05 200);
-  --destructive: oklch(0.55 0.2 25);
-  --destructive-foreground: oklch(1 0 0);
-  --border: oklch(0.9 0.01 170);
-  --input: oklch(0.9 0.01 170);
-  --ring: oklch(0.55 0.12 170);
-  --radius: 0.75rem;
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
-}
+    --card: 0 0% 100%;
+    --card-foreground: 200 50% 20%;
 
-.dark {
-  --background: oklch(0.15 0.02 200);
-  --foreground: oklch(0.95 0.01 170);
-  --card: oklch(0.2 0.02 200);
-  --card-foreground: oklch(0.95 0.01 170);
-  --popover: oklch(0.2 0.02 200);
-  --popover-foreground: oklch(0.95 0.01 170);
-  --primary: oklch(0.6 0.12 170);
-  --primary-foreground: oklch(0.15 0.02 200);
-  --secondary: oklch(0.25 0.02 200);
-  --secondary-foreground: oklch(0.95 0.01 170);
-  --muted: oklch(0.25 0.02 200);
-  --muted-foreground: oklch(0.65 0.02 200);
-  --accent: oklch(0.25 0.03 200);
-  --accent-foreground: oklch(0.95 0.01 170);
-  --destructive: oklch(0.55 0.2 25);
-  --destructive-foreground: oklch(1 0 0);
-  --border: oklch(0.3 0.02 200);
-  --input: oklch(0.3 0.02 200);
-  --ring: oklch(0.6 0.12 170);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(0.269 0 0);
-  --sidebar-ring: oklch(0.439 0 0);
-}
+    --popover: 0 0% 100%;
+    --popover-foreground: 200 50% 20%;
 
-@theme inline {
-  --font-sans: "Geist", "Geist Fallback", system-ui, sans-serif;
-  --font-mono: "Geist Mono", "Geist Mono Fallback", monospace;
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-card: var(--card);
-  --color-card-foreground: var(--card-foreground);
-  --color-popover: var(--popover);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-secondary: var(--secondary);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-destructive: var(--destructive);
-  --color-destructive-foreground: var(--destructive-foreground);
-  --color-border: var(--border);
-  --color-input: var(--input);
-  --color-ring: var(--ring);
-  --color-chart-1: var(--chart-1);
-  --color-chart-2: var(--chart-2);
-  --color-chart-3: var(--chart-3);
-  --color-chart-4: var(--chart-4);
-  --color-chart-5: var(--chart-5);
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
-  --color-sidebar: var(--sidebar);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-ring: var(--sidebar-ring);
+    /* Verde SEMA Principal */
+    --primary: 139 18% 27%;      /* #395238 (Verde Musgo Escuro) */
+    --primary-foreground: 0 0% 100%;
+
+    /* Verde Secundário / Acentos */
+    --secondary: 124 17% 40%;    /* #537856 */
+    --secondary-foreground: 0 0% 100%;
+
+    --muted: 114 20% 92%;        /* #e6efe5 */
+    --muted-foreground: 130 10% 40%;
+
+    --accent: 139 18% 27%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 115 15% 85%;       /* #dbe3d8 */
+    --input: 115 15% 85%;
+    --ring: 139 18% 27%;
+
+    --radius: 0.75rem;
+  }
+
+  .dark {
+    --background: 200 50% 10%;
+    --foreground: 0 0% 98%;
+    --card: 200 50% 12%;
+    --card-foreground: 0 0% 98%;
+    --popover: 200 50% 12%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 139 18% 40%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 124 17% 30%;
+    --secondary-foreground: 0 0% 100%;
+    --muted: 200 30% 20%;
+    --muted-foreground: 200 20% 70%;
+    --accent: 200 30% 25%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 200 30% 20%;
+    --input: 200 30% 20%;
+    --ring: 139 18% 40%;
+  }
 }
 
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border;
   }
   body {
     @apply bg-background text-foreground;
   }
 }
 
-/* Mobile touch improvements */
-@layer utilities {
-  .touch-manipulation {
-    touch-action: manipulation;
-  }
+/* Badges Personalizadas */
+.badge-aberta {
+  background-color: #1f5a33; /* Verde escuro SEMA */
+  color: white;
 }
-
-/* Safe area for mobile devices */
-@supports (padding-bottom: env(safe-area-inset-bottom)) {
-  .pb-safe {
-    padding-bottom: calc(1rem + env(safe-area-inset-bottom));
-  }
+.badge-fechada {
+  background-color: #4a3622; /* Marrom/Laranja fechado */
+  color: white;
 }
