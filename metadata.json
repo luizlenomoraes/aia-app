@@ -1,8 +1,0 @@
-{
-  "name": "AIA Eletrônico SEMA-AP",
-  "description": "Ferramenta móvel para fiscalização ambiental, pesquisa de infrações e cálculo de multas.",
-  "requestFramePermissions": [
-    "camera",
-    "geolocation"
-  ]
-}
