@@ -3,6 +3,9 @@ import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
 export default defineConfig({
+  build: {
+    outDir: 'dist',
+  },
   plugins: [
     react(),
     VitePWA({
@@ -11,7 +14,7 @@ export default defineConfig({
       manifest: {
         name: 'AIA Eletrônico SEMA-AP',
         short_name: 'SEMA-AP',
-        description: 'Ferramenta móvel para fiscalização ambiental, pesquisa de infrações e cálculo de multas.',
+        description: 'Ferramenta móvel para fiscalização ambiental.',
         theme_color: '#064e3b',
         background_color: '#f0fdf4',
         display: 'standalone',
